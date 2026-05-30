@@ -1,0 +1,93 @@
+name: nightingale
+description: "Nightingale — federated music player. Each installation is an ActivityPub node."
+publish_to: 'none'
+
+version: 0.1.0+1
+
+environment:
+  sdk: '>=3.11.4 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  flutter_riverpod: ^2.6.1
+  riverpod_annotation: ^2.6.1
+
+  # Navigation
+  go_router: ^15.1.2
+
+  # Dependency injection
+  get_it: ^8.0.3
+
+  # Networking / images
+  cached_network_image: ^3.4.1
+
+  # App metadata
+  package_info_plus: ^8.3.0
+
+  cupertino_icons: ^1.0.8
+
+  # Audio playback
+  just_audio: ^0.9.39
+  just_audio_background: ^0.0.1-beta.12
+  audio_session: ^0.1.21
+
+  # Local database (unencrypted by design — music catalog is not sensitive)
+  drift: ^2.21.0
+  drift_flutter: ^0.2.1
+
+  # Library scanning & metadata
+  on_audio_query: ^2.9.0
+  metadata_god: ^0.3.0+1
+
+  # Permissions
+  permission_handler: ^11.4.0
+
+  # Federation — cryptography & secure key storage
+  cryptography: ^2.7.0
+  crypto: ^3.0.3
+  flutter_secure_storage: ^9.2.4
+
+  # Federation — embedded ActivityPub HTTP server
+  shelf: ^1.4.2
+  shelf_router: ^1.1.4
+
+  # Federation — outgoing HTTP client
+  http: ^1.2.2
+
+  # Federation — network connectivity monitoring
+  connectivity_plus: ^6.1.1
+
+  # Account portability — QR code display for migration token
+  qr_flutter: ^4.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.1
+
+  # Riverpod code generation
+  riverpod_generator: ^2.6.3
+  build_runner: ^2.4.15
+
+  # Drift code generation
+  drift_dev: ^2.21.0
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/icon.png"
+  min_sdk_android: 26 
+  adaptive_icon_background: "assets/icon/app_icon_background.png"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png" 
+
+
+  # Static analysis
+  custom_lint: ^0.7.5
+  riverpod_lint: ^2.6.3
+
+flutter:
+  uses-material-design: true

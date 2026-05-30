@@ -1,0 +1,134 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:nightingale/core/di/service_locator.dart';
+import 'package:nightingale/features/library/library_repository.dart';
+import 'package:nightingale/features/library/models/album_model.dart';
+import 'package:nightingale/features/library/models/artist_model.dart';
+import 'package:nightingale/features/library/models/scan_result.dart';
+import 'package:nightingale/features/library/models/track_model.dart';
+
+// ── Scan state ─────────────────────────────────────────────────────────────
+
+enum LibraryScanStatus { idle, scanning, done, error }
+
+class LibraryScanState {
+  const LibraryScanState({
+    required this.status,
+    this.lastResult,
+    this.error,
+    this.isMediaStorePotentiallyStale = false,
+  });
+
+  final LibraryScanStatus status;
+  final ScanResult? lastResult;
+  final Object? error;
+  final bool isMediaStorePotentiallyStale;
+
+  LibraryScanState copyWith({
+    LibraryScanStatus? status,
+    ScanResult? lastResult,
+    Object? error,
+    bool? isMediaStorePotentiallyStale,
+  }) {
+    return LibraryScanState(
+      status: status ?? this.status,
+      lastResult: lastResult ?? this.lastResult,
+      error: error ?? this.error,
+      isMediaStorePotentiallyStale:
+          isMediaStorePotentiallyStale ?? this.isMediaStorePotentiallyStale,
+    );
+  }
+}
+
+class LibraryScanNotifier extends Notifier<LibraryScanState> {
+  @override
+  LibraryScanState build() => const LibraryScanState(
+    status: LibraryScanStatus.idle,
+  );
+
+  Future<void> scan() async {
+    if (state.status == LibraryScanStatus.scanning) return;
+    state = state.copyWith(status: LibraryScanStatus.scanning);
+    try {
+      final repo = sl<LibraryRepository>();
+      final result = await repo.scanLibrary();
+      state = LibraryScanState(
+        status: LibraryScanStatus.done,
+        lastResult: result,
+        isMediaStorePotentiallyStale: result.rejected > 0,
+      );
+    } catch (e) {
+      state = LibraryScanState(
+        status: LibraryScanStatus.error,
+        error: e,
+      );
+    }
+  }
+}
+
+final libraryScanProvider =
+    NotifierProvider<LibraryScanNotifier, LibraryScanState>(
+      LibraryScanNotifier.new,
+    );
+
+// ── Library data providers ─────────────────────────────────────────────────
+
+final allTracksProvider = StreamProvider<List<TrackModel>>((ref) {
+  ref.watch(libraryScanProvider);
+  return sl<LibraryRepository>().watchAllTracks();
+});
+
+final albumsProvider = StreamProvider<List<AlbumModel>>((ref) {
+  ref.watch(libraryScanProvider);
+  return sl<LibraryRepository>().watchAlbums();
+});
+
+final artistsProvider = StreamProvider<List<ArtistModel>>((ref) {
+  ref.watch(libraryScanProvider);
+  return sl<LibraryRepository>().watchArtists();
+});
+
+final genresProvider = FutureProvider<List<String>>((ref) {
+  ref.watch(libraryScanProvider);
+  return sl<LibraryRepository>().getGenres();
+});
+
+final albumDetailProvider =
+    FutureProvider.family<AlbumModel?, int>((ref, albumId) {
+      return sl<LibraryRepository>().getAlbumById(albumId);
+    });
+
+final albumTracksProvider =
+    FutureProvider.family<List<TrackModel>, int>((ref, albumId) {
+      return sl<LibraryRepository>().getTracksByAlbum(albumId);
+    });
+
+final artistAlbumsProvider =
+    FutureProvider.family<List<AlbumModel>, String>((ref, artist) {
+      return sl<LibraryRepository>().getAlbumsByArtist(artist);
+    });
+
+final artistTracksProvider =
+    FutureProvider.family<List<TrackModel>, String>((ref, artist) {
+      return sl<LibraryRepository>().getTracksByArtist(artist);
+    });
+
+final genreTracksProvider =
+    FutureProvider.family<List<TrackModel>, String>((ref, genre) {
+      return sl<LibraryRepository>().getTracksByGenre(genre);
+    });
+
+// ── Search ─────────────────────────────────────────────────────────────────
+
+class SearchQuery {
+  const SearchQuery(this.query);
+  final String query;
+}
+
+final searchResultsProvider = FutureProvider.family<
+  ({
+    List<TrackModel> tracks,
+    List<AlbumModel> albums,
+    List<ArtistModel> artists,
+  }),
+  String
+>((ref, query) => sl<LibraryRepository>().searchLibrary(query));

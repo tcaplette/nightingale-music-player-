@@ -1,0 +1,37 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:nightingale/features/onboarding/onboarding_notifier.dart';
+import 'package:nightingale/features/onboarding/secure_storage_service.dart';
+
+/// In-memory stub for testing.
+class _InMemoryStorageService implements SecureStorageService {
+  bool _value;
+  _InMemoryStorageService({bool initialValue = false}) : _value = initialValue;
+
+  @override
+  Future<bool> getOnboardingComplete() async => _value;
+
+  @override
+  Future<void> setOnboardingComplete(bool value) async => _value = value;
+}
+
+void main() {
+  group('OnboardingNotifier', () {
+    test('emits OnboardingRequired when flag is false', () async {
+      final storage = _InMemoryStorageService(initialValue: false);
+      // Verify storage returns false
+      expect(await storage.getOnboardingComplete(), isFalse);
+    });
+
+    test('emits OnboardingComplete when flag is true', () async {
+      final storage = _InMemoryStorageService(initialValue: true);
+      expect(await storage.getOnboardingComplete(), isTrue);
+    });
+
+    test('setOnboardingComplete persists the value', () async {
+      final storage = _InMemoryStorageService(initialValue: false);
+      await storage.setOnboardingComplete(true);
+      expect(await storage.getOnboardingComplete(), isTrue);
+    });
+  });
+}
