@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:nightingale/core/di/service_locator.dart';
 import 'package:nightingale/features/federation/publishing/listen_activity_publisher.dart';
+import 'package:nightingale/features/recommendations/data/cold_start_settings_repository.dart';
 import 'package:nightingale/shared/theme/app_spacing.dart';
 
 /// Settings screen with federation options.
@@ -13,12 +14,28 @@ class FederationSettingsScreen extends StatefulWidget {
 
 class _FederationSettingsScreenState extends State<FederationSettingsScreen> {
   final _listenPublisher = sl<ListenActivityPublisher>();
+  final _coldStartSettings = sl<ColdStartSettingsRepository>();
+
   bool _listenEnabled = false;
+  bool _discoveryEnabled = true;
+  bool _globalTrendingEnabled = false;
 
   @override
   void initState() {
     super.initState();
     _listenEnabled = _listenPublisher.isEnabled;
+    _loadColdStartPrefs();
+  }
+
+  Future<void> _loadColdStartPrefs() async {
+    final discovery = await _coldStartSettings.isDiscoveryEnabled();
+    final trending = await _coldStartSettings.isGlobalTrendingEnabled();
+    if (mounted) {
+      setState(() {
+        _discoveryEnabled = discovery;
+        _globalTrendingEnabled = trending;
+      });
+    }
   }
 
   @override
@@ -40,6 +57,36 @@ class _FederationSettingsScreenState extends State<FederationSettingsScreen> {
               onChanged: (value) {
                 setState(() => _listenEnabled = value);
                 _listenPublisher.setEnabled(value);
+              },
+            ),
+          ]),
+          const Divider(),
+          _section('Discovery', [
+            SwitchListTile(
+              title: const Text('Node discovery'),
+              subtitle: const Text(
+                'Allow Nightingale to query a public list of active nodes '
+                'to help you find people to follow. No personal data is sent.',
+                style: TextStyle(fontSize: 12),
+              ),
+              value: _discoveryEnabled,
+              onChanged: (value) {
+                setState(() => _discoveryEnabled = value);
+                _coldStartSettings.setDiscoveryEnabled(value);
+              },
+            ),
+            SwitchListTile(
+              title: const Text('Global trending'),
+              subtitle: const Text(
+                'Show tracks trending across the wider network, sourced from '
+                'a community relay. Off by default — enables a broader but '
+                'less personal view of what\'s popular.',
+                style: TextStyle(fontSize: 12),
+              ),
+              value: _globalTrendingEnabled,
+              onChanged: (value) {
+                setState(() => _globalTrendingEnabled = value);
+                _coldStartSettings.setGlobalTrendingEnabled(value);
               },
             ),
           ]),

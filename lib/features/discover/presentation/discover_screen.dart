@@ -77,7 +77,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen>
         data: (state) {
           if (state.results.isEmpty) {
             return DiscoverEmptyState(
-              onAddMusic: () => context.go(AppRoutes.library),
+              onFindPeople: () => context.push(AppRoutes.findPeople),
             );
           }
           return RefreshIndicator(
@@ -135,10 +135,10 @@ class _ResultList extends StatelessWidget {
       flat.addAll(items);
     }
 
-    addSection("What your people are into", trending);
-    addSection("Sounds like you", affinity);
-    addSection("From artists you already love", newFromKnown);
-    addSection("Explore", coldStart.isEmpty ? others : coldStart);
+    addSection('What your people are into', trending);
+    addSection('Sounds like you', affinity);
+    addSection('From artists you already love', newFromKnown);
+    addSection('Explore', coldStart.isEmpty ? others : coldStart);
 
     return flat;
   }

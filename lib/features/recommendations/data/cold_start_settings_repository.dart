@@ -17,9 +17,10 @@ class ColdStartSettingsRepository {
 
   final FlutterSecureStorage _storage;
 
+  // Discovery is opt-out (default on). Only returns false when explicitly disabled.
   Future<bool> isDiscoveryEnabled() async {
     final v = await _storage.read(key: _kDiscoveryOptInKey);
-    return v == 'true';
+    return v != 'false';
   }
 
   Future<void> setDiscoveryEnabled(bool enabled) =>

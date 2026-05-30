@@ -50,6 +50,12 @@
 - [x] 6.6 Verify: cold-start discovery requests contain no Authorization header, actor ID, or user data
 - [x] 6.7 Write unit tests: cold-start deactivates when following > 0; trending relay returns empty when opt-in is false; discovery error leaves app in usable state
 
+## 6b. Cold-Start Fixes
+
+- [x] 6b.1 Fix node discovery default: `isDiscoveryEnabled()` SHALL return `true` when no preference is stored — discovery is opt-out, not opt-in
+- [x] 6b.2 Fix `DiscoverEmptyState` CTA: replace "Add music" → Library with "Find people to follow" → `/social/find`
+- [x] 6b.3 Add Discover section to `FederationSettingsScreen`: toggle for node discovery (default on, opt-out), toggle for global trending relay (default off, explicit opt-in with privacy note)
+
 ## 7. Discover Screen — UI
 
 - [x] 7.1 Register `/discover` route in go_router and add the Discover tab to the main navigation rail/bottom bar
