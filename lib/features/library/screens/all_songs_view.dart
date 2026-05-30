@@ -25,23 +25,26 @@ class AllSongsView extends ConsumerWidget {
       ),
       data: (tracks) {
         if (tracks.isEmpty) {
-          return const EmptyStateWidget(
-            icon: Icons.music_note_outlined,
-            headline: 'No music yet',
-            subhead: 'Add audio files to your device and refresh.',
+          return RefreshIndicator(
+            onRefresh: () => ref.read(libraryScanProvider.notifier).scan(),
+            child: const EmptyStateWidget(
+              icon: Icons.music_note_outlined,
+              headline: 'No music yet',
+              subhead: 'Add audio files to your device and refresh.',
+            ),
           );
         }
-        return ListView.builder(
-          itemCount: tracks.length,
-          itemBuilder: (context, i) => _TrackTile(
-            track: tracks[i],
-            onTap: () {
-              print('NIGHTINGALE TAP: track ${tracks[i].title} at index $i');
-              print('NIGHTINGALE TAP: filePath = ${tracks[i].filePath}');
-              final notifier = ref.read(playbackProvider.notifier);
-              print('NIGHTINGALE TAP: notifier = $notifier');
-              notifier.loadAndPlay(tracks, startIndex: i);
-            },
+        return RefreshIndicator(
+          onRefresh: () => ref.read(libraryScanProvider.notifier).scan(),
+          child: ListView.builder(
+            itemCount: tracks.length,
+            itemBuilder: (context, i) => _TrackTile(
+              track: tracks[i],
+              onTap: () {
+                final notifier = ref.read(playbackProvider.notifier);
+                notifier.loadAndPlay(tracks, startIndex: i);
+              },
+            ),
           ),
         );
       },

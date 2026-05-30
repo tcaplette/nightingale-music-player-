@@ -49,6 +49,14 @@
 - [x] 5.4 Build Followers screen: person-first list; pending incoming follow requests section with Accept/Reject actions
 - [x] 5.5 Build Blocked/Muted list screen accessible from settings
 
+## 5b. Find People (Actor Search)
+
+- [x] 5b.1 Build `FindPeopleScreen`: text field accepting `@user@domain` or actor URL, submit triggers `ActorResolver.resolve()`, shows loading state while resolving
+- [x] 5b.2 On successful resolve, show a result card (avatar, display name, node URL) with a Follow button wired to `SocialGraphNotifier.followActor()`; on failure show an inline error message
+- [x] 5b.3 Add route `/social/find` to go_router pointing to `FindPeopleScreen`
+- [x] 5b.4 Wire "Find people to follow" button on the Feed empty state to navigate to `/social/find`
+- [x] 5b.5 Add a search/find entry point to the Following screen (action button or app bar icon) that navigates to `/social/find`
+
 ## 6. Social Feed & Notifications Feature Module
 
 - [x] 6.1 Implement `SocialFeedNotifier` Riverpod provider: queries `activities` table ordered by published_at desc, filters out blocked/muted actors, paginates 50 per page

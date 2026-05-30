@@ -11,7 +11,6 @@ import 'package:nightingale/features/library/screens/all_songs_view.dart';
 import 'package:nightingale/features/library/screens/albums_view.dart';
 import 'package:nightingale/features/library/screens/artists_view.dart';
 import 'package:nightingale/features/library/screens/genres_view.dart';
-import 'package:nightingale/features/social/providers/notifications_notifier.dart';
 import 'package:nightingale/shared/components/network_state/partial_library_widget.dart';
 import 'package:nightingale/shared/theme/app_spacing.dart';
 
@@ -62,7 +61,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     final isScanning = scanState.status == LibraryScanStatus.scanning;
 
     return Scaffold(
-      backgroundColor: Colors.green, // DEBUG: obvious color to verify rendering
       appBar: AppBar(
         title: const Text('Library'),
         actions: [
@@ -76,47 +74,32 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 ),
               ),
             ),
-          // Phase 5 — Feed shortcut
-          IconButton(
-            icon: const Icon(Icons.people_outline),
-            tooltip: 'Feed',
-            onPressed: () => context.push(AppRoutes.feed),
-          ),
-          // Phase 6 — Discover shortcut
-          IconButton(
-            icon: const Icon(Icons.explore_outlined),
-            tooltip: 'Discover',
-            onPressed: () => context.push(AppRoutes.discover),
-          ),
-          // Phase 5 — Notifications shortcut with unread badge
-          _NotificationsBadgeButton(),
-          IconButton(
-            icon: isScanning
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.refresh),
-            tooltip: 'Refresh library',
-            onPressed: isScanning
-                ? null
-                : () => ref.read(libraryScanProvider.notifier).scan(),
-          ),
           IconButton(
             icon: const Icon(Icons.search),
             tooltip: 'Search',
             onPressed: () => context.push(AppRoutes.search),
           ),
         ],
-        bottom: TabBar(
-          controller: _tabs,
-          tabs: const [
-            Tab(text: 'Songs'),
-            Tab(text: 'Albums'),
-            Tab(text: 'Artists'),
-            Tab(text: 'Genres'),
-          ],
+        bottom: PreferredSize(
+          preferredSize: Size.fromHeight(
+            kTextTabBarHeight + (isScanning ? 3.0 : 0.0),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TabBar(
+                controller: _tabs,
+                tabs: const [
+                  Tab(text: 'Songs'),
+                  Tab(text: 'Albums'),
+                  Tab(text: 'Artists'),
+                  Tab(text: 'Genres'),
+                ],
+              ),
+              if (isScanning)
+                const LinearProgressIndicator(minHeight: 3),
+            ],
+          ),
         ),
       ),
       body: Column(
@@ -145,47 +128,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
           ),
         ],
       ),
-    );
-  }
-}
-
-class _NotificationsBadgeButton extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final unread = ref.watch(
-      notificationsProvider.select((s) => s.unreadCount),
-    );
-
-    return Stack(
-      children: [
-        IconButton(
-          icon: const Icon(Icons.notifications_outlined),
-          tooltip: 'Notifications',
-          onPressed: () => context.push(AppRoutes.notifications),
-        ),
-        if (unread > 0)
-          Positioned(
-            right: 6,
-            top: 6,
-            child: Container(
-              padding: const EdgeInsets.all(2),
-              decoration: const BoxDecoration(
-                color: Colors.red,
-                shape: BoxShape.circle,
-              ),
-              constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-              child: Text(
-                unread > 99 ? '99+' : '$unread',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 9,
-                  fontWeight: FontWeight.bold,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ),
-      ],
     );
   }
 }

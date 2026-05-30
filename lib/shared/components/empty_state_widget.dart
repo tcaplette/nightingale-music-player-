@@ -7,11 +7,13 @@ class EmptyStateWidget extends StatelessWidget {
     required this.icon,
     required this.headline,
     this.subhead,
+    this.action,
   });
 
   final IconData icon;
   final String headline;
   final String? subhead;
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
@@ -37,6 +39,10 @@ class EmptyStateWidget extends StatelessWidget {
                 style: theme.textTheme.bodyMedium?.copyWith(color: muted),
                 textAlign: TextAlign.center,
               ),
+            ],
+            if (action != null) ...[
+              const SizedBox(height: AppSpacing.md),
+              action!,
             ],
           ],
         ),

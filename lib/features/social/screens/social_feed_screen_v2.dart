@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:nightingale/core/router/app_router.dart';
 import 'package:nightingale/features/social/providers/social_feed_notifier.dart';
 import 'package:nightingale/shared/components/empty_state_widget.dart';
+import 'package:nightingale/shared/components/notifications_badge_button.dart';
 import 'package:nightingale/shared/components/skeleton_loader.dart';
 import 'package:nightingale/shared/components/social/activity_card.dart';
 import 'package:nightingale/shared/theme/app_colors.dart';
@@ -15,7 +18,10 @@ class SocialFeedScreenV2 extends ConsumerWidget {
     final state = ref.watch(socialFeedProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Feed')),
+      appBar: AppBar(
+        title: const Text('Feed'),
+        actions: const [NotificationsBadgeButton()],
+      ),
       body: RefreshIndicator(
         onRefresh: () => ref.read(socialFeedProvider.notifier).refresh(),
         child: _FeedBody(state: state),
@@ -38,11 +44,15 @@ class _FeedBody extends ConsumerWidget {
       children: [
         if (state.isOffline) const _OfflineBanner(),
         if (state.items.isEmpty)
-          const Expanded(
+          Expanded(
             child: EmptyStateWidget(
               icon: Icons.people_outline,
               headline: 'Nothing here yet',
               subhead: 'Follow people to see what they\'re listening to.',
+              action: TextButton(
+                onPressed: () => context.push(AppRoutes.findPeople),
+                child: const Text('Find people to follow'),
+              ),
             ),
           )
         else
@@ -57,7 +67,7 @@ class _FeedBody extends ConsumerWidget {
             },
             child: ListView.separated(
               itemCount: state.items.length + (state.hasMore ? 1 : 0),
-              separatorBuilder: (_, __) => const Divider(
+              separatorBuilder: (context, i) => const Divider(
                 height: 1,
                 indent: AppSpacing.md,
                 endIndent: AppSpacing.md,
@@ -75,35 +85,6 @@ class _FeedBody extends ConsumerWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _EmptyFeed extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Follow people to see what they\'re listening to',
-              style: Theme.of(context).textTheme.titleMedium,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              'Your feed will show listens, shares, and new additions from people you follow.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppColors.neutral400,
-                  ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

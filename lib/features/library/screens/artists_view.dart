@@ -24,12 +24,15 @@ class ArtistsView extends ConsumerWidget {
             detail: 'Artists appear after your library is scanned.',
           );
         }
-        return ListView.builder(
-          itemCount: artists.length,
-          itemBuilder: (context, i) => _ArtistTile(
-            artist: artists[i],
-            onTap: () => context.push(
-              '/library/artists/${Uri.encodeComponent(artists[i].name)}',
+        return RefreshIndicator(
+          onRefresh: () => ref.read(libraryScanProvider.notifier).scan(),
+          child: ListView.builder(
+            itemCount: artists.length,
+            itemBuilder: (context, i) => _ArtistTile(
+              artist: artists[i],
+              onTap: () => context.push(
+                '/library/artists/${Uri.encodeComponent(artists[i].name)}',
+              ),
             ),
           ),
         );

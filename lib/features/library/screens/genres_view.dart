@@ -24,9 +24,12 @@ class GenresView extends ConsumerWidget {
             detail: 'Genres appear when your tracks have genre tags.',
           );
         }
-        return ListView.builder(
-          itemCount: genres.length,
-          itemBuilder: (context, i) => _GenreTile(genre: genres[i]),
+        return RefreshIndicator(
+          onRefresh: () => ref.read(libraryScanProvider.notifier).scan(),
+          child: ListView.builder(
+            itemCount: genres.length,
+            itemBuilder: (context, i) => _GenreTile(genre: genres[i]),
+          ),
         );
       },
     );

@@ -14,12 +14,14 @@ import 'package:nightingale/features/onboarding/screens/onboarding_shell.dart';
 import 'package:nightingale/features/player_ui/player_shell.dart';
 import 'package:nightingale/features/player_ui/screens/now_playing_screen.dart';
 import 'package:nightingale/features/player_ui/screens/queue_screen.dart';
+import 'package:nightingale/features/social/screens/find_people_screen.dart';
 import 'package:nightingale/features/social/screens/followers_screen.dart';
 import 'package:nightingale/features/social/screens/following_screen.dart';
 import 'package:nightingale/features/social/screens/notifications_screen.dart';
 import 'package:nightingale/features/social/screens/playlist_detail_screen.dart';
 import 'package:nightingale/features/social/screens/profile_screen.dart';
 import 'package:nightingale/features/social/screens/social_feed_screen_v2.dart';
+import 'package:nightingale/shared/components/navigation/app_bottom_nav.dart';
 import 'package:nightingale/shared/theme/app_motion.dart';
 
 abstract final class AppRoutes {
@@ -39,6 +41,7 @@ abstract final class AppRoutes {
   static const String discover = '/discover';
   static const String notifications = '/notifications';
   static const String profile = '/profile/:actorId';
+  static const String findPeople = '/social/find';
   static const String following = '/social/following';
   static const String followers = '/social/followers';
   static const String playlistDetail = '/playlists/:playlistId';
@@ -117,37 +120,69 @@ final GoRouter appRouter = GoRouter(
       name: 'identitySetup',
       pageBuilder: (ctx, state) => _fadePage(ctx, state, const OnboardingShell()),
     ),
-    ShellRoute(
-      builder: (context, state, child) => PlayerShell(child: child),
-      routes: [
-        GoRoute(
-          path: AppRoutes.library,
-          name: 'library',
-          pageBuilder: (ctx, state) => _fadePage(ctx, state, const LibraryScreen()),
+    // Main shell: PlayerShell + bottom nav wrapping the three primary tabs.
+    // StatefulShellRoute preserves each branch's navigator stack independently.
+    StatefulShellRoute.indexedStack(
+      builder: (context, state, navigationShell) => PlayerShell(
+        child: AppBottomNav(
+          navigationShell: navigationShell,
+          child: navigationShell,
+        ),
+      ),
+      branches: [
+        // Branch 0 — Library
+        StatefulShellBranch(
           routes: [
             GoRoute(
-              path: 'albums/:albumId',
-              name: 'albumDetail',
-              pageBuilder: (ctx, state) {
-                final albumId = int.parse(state.pathParameters['albumId']!);
-                return _fadePage(ctx, state, AlbumDetailScreen(albumId: albumId));
-              },
+              path: AppRoutes.library,
+              name: 'library',
+              pageBuilder: (ctx, state) => _fadePage(ctx, state, const LibraryScreen()),
+              routes: [
+                GoRoute(
+                  path: 'albums/:albumId',
+                  name: 'albumDetail',
+                  pageBuilder: (ctx, state) {
+                    final albumId = int.parse(state.pathParameters['albumId']!);
+                    return _fadePage(ctx, state, AlbumDetailScreen(albumId: albumId));
+                  },
+                ),
+                GoRoute(
+                  path: 'artists/:artistId',
+                  name: 'artistDetail',
+                  pageBuilder: (ctx, state) {
+                    final artistName =
+                        Uri.decodeComponent(state.pathParameters['artistId']!);
+                    return _fadePage(ctx, state, ArtistDetailScreen(artistName: artistName));
+                  },
+                ),
+              ],
             ),
             GoRoute(
-              path: 'artists/:artistId',
-              name: 'artistDetail',
-              pageBuilder: (ctx, state) {
-                final artistName =
-                    Uri.decodeComponent(state.pathParameters['artistId']!);
-                return _fadePage(ctx, state, ArtistDetailScreen(artistName: artistName));
-              },
+              path: AppRoutes.search,
+              name: 'search',
+              pageBuilder: (ctx, state) => _fadePage(ctx, state, const SearchScreen()),
             ),
           ],
         ),
-        GoRoute(
-          path: AppRoutes.search,
-          name: 'search',
-          pageBuilder: (ctx, state) => _fadePage(ctx, state, const SearchScreen()),
+        // Branch 1 — Feed
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: AppRoutes.feed,
+              name: 'feed',
+              pageBuilder: (ctx, state) => _fadePage(ctx, state, const SocialFeedScreenV2()),
+            ),
+          ],
+        ),
+        // Branch 2 — Discover
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: AppRoutes.discover,
+              name: 'discover',
+              pageBuilder: (ctx, state) => _fadePage(ctx, state, const DiscoverScreen()),
+            ),
+          ],
         ),
       ],
     ),
@@ -161,12 +196,7 @@ final GoRouter appRouter = GoRouter(
       name: 'queue',
       pageBuilder: (ctx, state) => _fadePage(ctx, state, const QueueScreen()),
     ),
-    // Phase 5 — social routes
-    GoRoute(
-      path: AppRoutes.feed,
-      name: 'feed',
-      pageBuilder: (ctx, state) => _fadePage(ctx, state, const SocialFeedScreenV2()),
-    ),
+    // Phase 5 — social routes (pushed over any branch)
     GoRoute(
       path: AppRoutes.notifications,
       name: 'notifications',
@@ -180,6 +210,11 @@ final GoRouter appRouter = GoRouter(
             Uri.decodeComponent(state.pathParameters['actorId'] ?? '');
         return _fadePage(ctx, state, ProfileScreen(actorUrl: actorId));
       },
+    ),
+    GoRoute(
+      path: AppRoutes.findPeople,
+      name: 'findPeople',
+      pageBuilder: (ctx, state) => _fadePage(ctx, state, const FindPeopleScreen()),
     ),
     GoRoute(
       path: AppRoutes.following,
@@ -199,11 +234,6 @@ final GoRouter appRouter = GoRouter(
             Uri.decodeComponent(state.pathParameters['playlistId'] ?? '');
         return _fadePage(ctx, state, PlaylistDetailScreen(playlistUrl: playlistId));
       },
-    ),
-    GoRoute(
-      path: AppRoutes.discover,
-      name: 'discover',
-      pageBuilder: (ctx, state) => _fadePage(ctx, state, const DiscoverScreen()),
     ),
   ],
   errorBuilder: (context, state) => Scaffold(

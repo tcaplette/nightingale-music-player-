@@ -205,7 +205,11 @@ class _NetworkStateIndicator extends StatelessWidget {
       if (state.status == ps.PlaybackStatus.error) {
         return Padding(
           padding: const EdgeInsets.only(bottom: AppSpacing.md),
-          child: const HostOfflineWidget(displayName: 'Remote node'),
+          child: HostOfflineWidget(
+            displayName: remoteSource.uri.host.isNotEmpty
+                ? remoteSource.uri.host
+                : 'Remote node',
+          ),
         );
       }
 
@@ -237,7 +241,7 @@ class _NetworkStateIndicator extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.offline_bolt, size: 14, color: Colors.green),
+            Icon(Icons.offline_bolt, size: 14, color: AppColors.accent),
             const SizedBox(width: AppSpacing.xs),
             Text(
               'Cached',

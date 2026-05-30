@@ -12,3 +12,7 @@ abstract final class AppSpacing {
   static const double insetMd = md;
   static const double insetLg = lg;
 }
+
+abstract final class AppDimensions {
+  static const double miniPlayerHeight = 64.0;
+}

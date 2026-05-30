@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nightingale/core/database/app_database.dart';
+import 'package:nightingale/core/router/app_router.dart';
 import 'package:nightingale/features/social/providers/social_graph_notifier.dart';
 import 'package:nightingale/shared/components/identity/person_display.dart';
 import 'package:nightingale/shared/theme/app_colors.dart';
@@ -21,7 +22,16 @@ class FollowingScreen extends ConsumerWidget {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Following')),
+      appBar: AppBar(
+        title: const Text('Following'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.person_add_outlined),
+            tooltip: 'Find people',
+            onPressed: () => context.push(AppRoutes.findPeople),
+          ),
+        ],
+      ),
       body: _FollowingBody(
         following: state.following,
         outgoingPending: state.outgoingPending,
@@ -213,6 +223,12 @@ class _EmptyFollowing extends StatelessWidget {
                   .bodySmall
                   ?.copyWith(color: AppColors.neutral400),
               textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            FilledButton.icon(
+              onPressed: () => context.push(AppRoutes.findPeople),
+              icon: const Icon(Icons.person_add_outlined),
+              label: const Text('Find people to follow'),
             ),
           ],
         ),

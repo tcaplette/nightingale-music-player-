@@ -6,8 +6,6 @@ import 'package:nightingale/features/playback/providers/playback_providers.dart'
 import 'package:nightingale/shared/theme/app_radius.dart';
 import 'package:nightingale/shared/theme/app_spacing.dart';
 
-const double miniPlayerHeight = 64.0;
-
 class MiniPlayer extends ConsumerWidget {
   const MiniPlayer({super.key});
 
@@ -29,7 +27,7 @@ class MiniPlayer extends ConsumerWidget {
       child: GestureDetector(
       onTap: () => context.push(AppRoutes.nowPlaying),
       child: Container(
-        height: miniPlayerHeight,
+        height: AppDimensions.miniPlayerHeight,
         margin: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
         decoration: BoxDecoration(
           color: scheme.surfaceContainerHighest,

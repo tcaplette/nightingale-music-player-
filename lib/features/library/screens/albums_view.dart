@@ -23,17 +23,23 @@ class AlbumsView extends ConsumerWidget {
       ),
       data: (albums) {
         if (albums.isEmpty) {
-          return const EmptyStateWidget(
-            icon: Icons.album_outlined,
-            headline: 'No albums yet',
-            subhead: 'Albums will appear once your library is scanned.',
+          return RefreshIndicator(
+            onRefresh: () => ref.read(libraryScanProvider.notifier).scan(),
+            child: const EmptyStateWidget(
+              icon: Icons.album_outlined,
+              headline: 'No albums yet',
+              subhead: 'Albums will appear once your library is scanned.',
+            ),
           );
         }
-        return ListView.builder(
-          itemCount: albums.length,
-          itemBuilder: (context, i) => _AlbumTile(
-            album: albums[i],
-            onTap: () => context.push('/library/albums/${albums[i].id}'),
+        return RefreshIndicator(
+          onRefresh: () => ref.read(libraryScanProvider.notifier).scan(),
+          child: ListView.builder(
+            itemCount: albums.length,
+            itemBuilder: (context, i) => _AlbumTile(
+              album: albums[i],
+              onTap: () => context.push('/library/albums/${albums[i].id}'),
+            ),
           ),
         );
       },

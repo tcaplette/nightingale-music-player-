@@ -4,8 +4,6 @@ import 'package:nightingale/features/playback/providers/playback_providers.dart'
 import 'package:nightingale/features/player_ui/mini_player.dart';
 import 'package:nightingale/shared/theme/app_spacing.dart';
 
-const double miniPlayerHeight = 64.0;
-
 /// Global shell that sits above the navigator and keeps the MiniPlayer
 /// persistent across all routes. Bottom padding is injected via
 /// [MediaQuery] override so list content is never hidden behind the bar.
@@ -19,7 +17,7 @@ class PlayerShell extends ConsumerWidget {
     final hasQueue = playbackAsync.valueOrNull?.hasQueue ?? false;
 
     final bottomPad = hasQueue
-        ? miniPlayerHeight + AppSpacing.sm
+        ? AppDimensions.miniPlayerHeight + AppSpacing.sm
         : 0.0;
 
     return Stack(

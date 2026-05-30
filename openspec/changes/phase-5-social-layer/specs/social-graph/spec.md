@@ -106,6 +106,32 @@ The system SHALL allow the local user to mute an actor, suppressing their conten
 
 ---
 
+### Requirement: Find and follow any actor by handle
+
+The system SHALL provide a UI entry point that lets a user look up any actor on the federated network by `@user@domain` handle or actor URL, and follow them from the result — without any prior social connection.
+
+#### Scenario: User searches for a valid handle
+- **WHEN** the user enters a valid `@user@domain` handle into the find-people search field and submits
+- **THEN** the system resolves the actor via WebFinger, displays a profile card (avatar, display name, node), and offers a Follow button
+
+#### Scenario: User searches with a direct actor URL
+- **WHEN** the user enters a full actor URL (e.g. `https://node.example/users/alice`)
+- **THEN** the system fetches the actor object directly and displays the same profile card
+
+#### Scenario: Handle cannot be resolved
+- **WHEN** WebFinger or actor fetch fails for any reason
+- **THEN** the system displays an honest error ("Couldn't find anyone at that address") without crashing or showing a blank screen
+
+#### Scenario: Find-people entry point is reachable from the Feed empty state
+- **WHEN** the user opens the Feed tab and has no follows
+- **THEN** the empty state includes an actionable "Find people to follow" button that opens the find-people search UI
+
+#### Scenario: Find-people entry point is reachable from the Following screen
+- **WHEN** the user opens the Following screen
+- **THEN** there is a persistent entry point (e.g. a search icon or "Find people" button) to open the find-people search UI regardless of how many people they already follow
+
+---
+
 ### Requirement: Followers and following lists are person-first
 The system SHALL display followers and following as a list of people (avatar + display name) and SHALL NOT show raw `@user@node` handles as the primary identifier.
 
