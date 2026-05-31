@@ -76,7 +76,7 @@ class AppDatabase extends _$AppDatabase {
       : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -115,6 +115,20 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 6) {
         await m.createTable(activityQueueTable);
+      }
+      if (from < 7) {
+        // Phase 0b: add STUN-discovered public address to node identity.
+        await m.addColumn(
+          nodeIdentityTable,
+          nodeIdentityTable.nodePublicAddress,
+        );
+      }
+      if (from < 8) {
+        // Phase 0c: discovery source tag on actor cache entries.
+        await m.addColumn(
+          actorCacheTable,
+          actorCacheTable.discoverySource,
+        );
       }
     },
   );

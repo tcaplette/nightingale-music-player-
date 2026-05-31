@@ -118,8 +118,13 @@ void main() {
       await tester.pumpWidget(
         _wrap(const MiniPlayer(), playbackState: _state(isPlaying: false)),
       );
-      await tester.pump();
-      expect(find.bySemanticsLabel('Play'), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is Semantics && w.properties.label == 'Play',
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('pause button has accessible Semantics label when playing',
@@ -127,8 +132,13 @@ void main() {
       await tester.pumpWidget(
         _wrap(const MiniPlayer(), playbackState: _state(isPlaying: true)),
       );
-      await tester.pump();
-      expect(find.bySemanticsLabel('Pause'), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is Semantics && w.properties.label == 'Pause',
+        ),
+        findsOneWidget,
+      );
     });
   });
 }

@@ -16,8 +16,8 @@ void main() {
       expect(await repo.isGlobalTrendingEnabled(), isFalse);
     });
 
-    test('discovery is disabled by default', () async {
-      expect(await repo.isDiscoveryEnabled(), isFalse);
+    test('discovery is enabled by default (opt-out)', () async {
+      expect(await repo.isDiscoveryEnabled(), isTrue);
     });
 
     test('can enable and disable global trending', () async {

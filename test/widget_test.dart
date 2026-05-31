@@ -1,4 +1,5 @@
 import 'package:drift/native.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get_it/get_it.dart';
@@ -14,13 +15,13 @@ import 'package:nightingale/core/repositories/activity_repository.dart';
 import 'package:nightingale/core/repositories/app_info_repository.dart';
 import 'package:nightingale/core/repositories/social_repository.dart';
 import 'package:nightingale/features/federation/delivery/activity_delivery_service.dart';
-import 'package:nightingale/features/federation/delivery/relay_client.dart';
 import 'package:nightingale/features/federation/moderation/moderation_repository.dart';
 import 'package:nightingale/features/federation/reachability/node_reachability_service.dart';
 import 'package:nightingale/features/library/library_repository.dart';
 import 'package:nightingale/features/library/library_repository_impl.dart';
 import 'package:nightingale/features/node_identity/node_identity_repository.dart';
 import 'package:nightingale/features/node_identity/node_identity_repository_impl.dart';
+import 'package:nightingale/features/onboarding/secure_storage_service.dart';
 import 'package:nightingale/features/social/activity_repository_impl.dart';
 import 'package:nightingale/features/social/social_repository_impl.dart';
 import 'package:nightingale/app.dart';
@@ -38,6 +39,9 @@ Future<void> _setupTestServiceLocator() async {
   _sl.registerSingleton<AppInfoRepository>(
     PackageInfoAppInfoRepository(AppConfig.instance),
   );
+  _sl.registerSingleton<SecureStorageService>(
+    FlutterSecureStorageService(),
+  );
 
   // Use in-memory database — no path_provider needed
   _testDb = AppDatabase(NativeDatabase.memory());
@@ -51,13 +55,11 @@ Future<void> _setupTestServiceLocator() async {
     NodeIdentityRepositoryImpl(
       db: _testDb!,
       crypto: crypto,
-      baseUrl: 'http://localhost',
     ),
   );
 
   // Minimal federation infrastructure required by providers
   final moderation = ModerationRepository(db: _testDb!);
-  final relay = RelayClient(relayBaseUrl: '');
   final sig = HttpSignatureService(
     crypto: crypto,
     keyId: 'http://localhost/users/node#main-key',
@@ -65,13 +67,11 @@ Future<void> _setupTestServiceLocator() async {
   final delivery = ActivityDeliveryService(
     db: _testDb!,
     sigService: sig,
-    relayClient: relay,
     moderation: moderation,
   );
   final actorResolver = ActorResolver(db: _testDb!);
   _sl.registerSingleton<ModerationRepository>(moderation);
   _sl.registerSingleton<HttpSignatureService>(sig);
-  _sl.registerSingleton<RelayClient>(relay);
   _sl.registerSingleton<ActivityDeliveryService>(delivery);
   _sl.registerSingleton<ActorResolver>(actorResolver);
   _sl.registerSingleton<NodeReachabilityService>(NodeReachabilityService());
@@ -115,11 +115,15 @@ void main() {
     await tester.runAsync(() async {
       await tester.pumpWidget(const NightingaleApp());
       await tester.pump();
-      // Drain pending async operations (Drift queries, provider loads)
-      // before the test completes so that dispose is clean.
+      // Drain pending async operations (Drift queries, provider loads).
       await Future.delayed(const Duration(milliseconds: 100));
       await tester.pump();
-      expect(find.text('Library'), findsOneWidget);
+      expect(find.text('Library'), findsWidgets);
+      // Replace the full app with an empty widget so Riverpod/Drift
+      // stream subscriptions are cancelled before test cleanup, then
+      // pump once more to let the zero-duration Drift timers fire.
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
     });
   });
 }

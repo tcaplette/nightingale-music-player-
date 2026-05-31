@@ -53,6 +53,67 @@ A written finding: how reliable is direct phone-to-phone streaming, under what c
 
 ---
 
+## Phase 0b — Decentralised Transport ✅ COMPLETE
+
+Each phone is a node. This phase removes the broken relay stub, fixes the federation server to bind to a stable port, adds STUN-based public address discovery, and introduces mDNS so devices on the same network find each other automatically. Activity delivery becomes pure queue-and-retry against the target's most recently resolved address. No central server is involved at any point.
+
+---
+
+## Phase 0c — Cross-Network Cold-Start Discovery
+
+### The Problem
+
+mDNS solves same-network discovery. STUN solves cross-network *reachability* once two nodes know each other. But neither solves **first contact** between two people on different networks who have never met. A new user who installs Nightingale and knows nobody already on the network has no way to find anyone. This is the cold-start problem, and it is existential — a federated app with no discovery path is a dead app.
+
+This is not a Phase 6 problem. It must be solved before the app is meaningful to use.
+
+### Goals
+
+- A brand-new user on any network can find and follow any other user by username
+- No central authority controls who can join or be found
+- The mechanism degrades gracefully — if the bootstrap infrastructure is unreachable, mDNS and social graph traversal still work
+- Mastodon users — the most likely early adopters — can import their existing social graph to bootstrap their Nightingale network immediately
+
+### Deliverables
+
+#### 0c.1 — Mastodon Social Graph Import
+
+Mastodon users are the most likely early adopters of Nightingale. They are already on ActivityPub, they already care about decentralised media, and they already have social graphs. Nightingale should let them bring that graph with them.
+
+The mechanism:
+1. The user enters their Mastodon handle (`@howard@mastodon.social`) during or after onboarding
+2. WebFinger resolves their Mastodon actor (this already works — `ActorResolver` has WebFinger support)
+3. Nightingale fetches their Mastodon followers and following collections
+4. For each Mastodon connection, query the bootstrap directory for a matching Nightingale registration. A Mastodon user who also uses Nightingale would have registered under the same or a linked username.
+5. Additionally, scan each Mastodon actor object for a Nightingale extension field (`x-nightingale-actor-url`) — a Mastodon user can add their Nightingale actor URL to their profile, which the bridge picks up without needing the directory at all.
+6. Surface all found Nightingale users as suggested follows with a single "Follow all" action.
+
+This gives a new user an immediate starting network on day one, drawn from relationships they already have. It also creates a viral loop: every Mastodon user who joins Nightingale makes their Mastodon followers discoverable to each other.
+
+The Mastodon connection is entirely optional and requires no approval from Mastodon or any instance. It uses public ActivityPub endpoints that Mastodon already exposes.
+
+#### 0c.2 — Peer Exchange at Follow Time
+
+When Alice follows Bob, Bob's known connections should propagate to Alice's bootstrap. This is already partially built (background peer indexing in `SocialSubscribingService` fetches followers/following on follow). This phase formalises it:
+
+- On follow, fetch the new contact's followers and following collections and resolve + cache all actor objects
+- This means one mDNS connection (same WiFi, first meeting) propagates the full social graph of that person to your device
+- Two devices that have never been on the same network become mutually discoverable through a single shared connection
+
+#### 0c.3 — Onboarding Discovery Step
+
+Onboarding currently ends at identity setup. This phase adds a discovery step:
+
+- **Option A — Mastodon import**: enter your Mastodon handle, see your Mastodon network on Nightingale immediately. This is the primary path.
+- **Option B — Find by username**: search for specific people by username using mDNS, actor cache, and social graph traversal.
+- The step is skippable — solo use is valid. But the app should not feel empty on first open.
+
+### Exit Criteria
+
+A new user who installs the app, completes onboarding, and has no prior connections can find and follow at least one other user within 60 seconds, on any network, without being told an IP address or a raw URL.
+
+---
+
 ## Phase 1 — Foundation
 
 ### Goals

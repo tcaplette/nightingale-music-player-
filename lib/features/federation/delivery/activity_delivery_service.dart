@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:drift/drift.dart';
 import 'package:http/http.dart' as http;
@@ -8,7 +7,6 @@ import 'package:nightingale/core/activitypub/models/ap_activity.dart';
 import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/core/federation/http_signature_service.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
-import 'package:nightingale/features/federation/delivery/relay_client.dart';
 import 'package:nightingale/features/federation/moderation/moderation_repository.dart';
 
 const _maxAttempts = 3;
@@ -18,21 +16,21 @@ const _retryDelays = [
   Duration(seconds: 20),
 ];
 
+// Activities stuck in `retrying` for longer than this are treated as abandoned.
+const _staleRetryThreshold = Duration(minutes: 5);
+
 class ActivityDeliveryService {
   ActivityDeliveryService({
     required this.db,
     required this.sigService,
-    required this.relayClient,
     required this.moderation,
   });
 
   final AppDatabase db;
   final HttpSignatureService sigService;
-  final RelayClient relayClient;
   final ModerationRepository moderation;
 
   Future<void> deliver(ApActivity activity, String targetInboxUrl) async {
-    // Check defederation before queueing
     final domain = Uri.parse(targetInboxUrl).host;
     if (await moderation.isDefederated(domain)) {
       AppLogger.debug(
@@ -42,7 +40,6 @@ class ActivityDeliveryService {
       return;
     }
 
-    // Write to outbox queue
     await db.into(db.outboxActivitiesTable).insert(
           OutboxActivitiesTableCompanion.insert(
             activityId: activity.id,
@@ -55,12 +52,18 @@ class ActivityDeliveryService {
     unawaited(_attemptDelivery(activity, targetInboxUrl));
   }
 
-  /// Called on app startup to re-enqueue stale pending/retrying activities.
+  /// Re-enqueues pending activities and stale retrying activities on startup.
   Future<void> sweepPendingOnStartup() async {
+    final cutoff = DateTime.now().toUtc().subtract(_staleRetryThreshold);
+
     final stale = await (db.select(db.outboxActivitiesTable)
-          ..where(
-            (t) => t.status.isIn(['pending', 'retrying']),
-          ))
+          ..where((t) {
+            // Always sweep `pending`.
+            // Sweep `retrying` rows whose last attempt was more than 5 min ago.
+            return t.status.equals('pending') |
+                (t.status.equals('retrying') &
+                    t.lastAttemptedAt.isSmallerOrEqualValue(cutoff));
+          }))
         .get();
 
     for (final row in stale) {
@@ -125,11 +128,10 @@ class ActivityDeliveryService {
       }
     }
 
-    // All direct attempts exhausted — hand to relay
-    final refId = await relayClient.handOff(activity, targetInboxUrl);
-    await _updateStatus(activity.id, 'relayed', attempt, relayRef: refId);
+    // All direct attempts exhausted — queue as pending for retry on next foreground.
+    await _updateStatus(activity.id, 'pending', attempt);
     AppLogger.info(
-      'Handed ${activity.id} to relay (ref=$refId)',
+      '${activity.id} queued as pending — will retry on next foreground',
       tag: 'delivery',
     );
   }
@@ -137,16 +139,14 @@ class ActivityDeliveryService {
   Future<void> _updateStatus(
     String activityId,
     String status,
-    int attempts, {
-    String? relayRef,
-  }) async {
+    int attempts,
+  ) async {
     await (db.update(db.outboxActivitiesTable)
           ..where((t) => t.activityId.equals(activityId)))
         .write(OutboxActivitiesTableCompanion(
       status: Value(status),
       attemptCount: Value(attempts),
       lastAttemptedAt: Value(DateTime.now().toUtc()),
-      relayReferenceId: relayRef != null ? Value(relayRef) : const Value.absent(),
     ));
   }
 }

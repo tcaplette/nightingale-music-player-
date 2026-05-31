@@ -10,4 +10,6 @@ class NodeIdentityTable extends Table {
   TextColumn get preferredUsername => text()();
   TextColumn get displayName => text()();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  // STUN-discovered public IP:port (e.g. "203.0.113.5:7777"); null until resolved.
+  TextColumn get nodePublicAddress => text().nullable()();
 }

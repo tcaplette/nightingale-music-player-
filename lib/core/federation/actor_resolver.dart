@@ -19,13 +19,26 @@ class ResolveFailed extends ResolveResult {
   final String reason;
 }
 
+// Priority order for discovery source tagging.
+// Higher number = higher priority; a higher-priority source is never overwritten.
+const _sourcePriority = {
+  'manual': 5,
+  'mDNS': 4,
+  'mastodonImport': 3,
+  'stun': 2,
+  'peerExchange': 1,
+};
+
 class ActorResolver {
   ActorResolver({required this.db, this.ttlSeconds = 900});
 
   final AppDatabase db;
   final int ttlSeconds;
 
-  Future<ResolveResult> resolve(String handleOrUrl) async {
+  Future<ResolveResult> resolve(
+    String handleOrUrl, {
+    String discoverySource = 'manual',
+  }) async {
     final actorUrl = handleOrUrl.startsWith('@')
         ? await _webFingerToUrl(handleOrUrl)
         : handleOrUrl;
@@ -39,7 +52,7 @@ class ActorResolver {
     if (cached != null) return ResolveOk(cached);
 
     // Network fetch
-    return _fetchAndCache(actorUrl);
+    return _fetchAndCache(actorUrl, discoverySource: discoverySource);
   }
 
   Future<void> invalidate(String actorUrl) async {
@@ -77,7 +90,10 @@ class ActorResolver {
     }
   }
 
-  Future<ResolveResult> _fetchAndCache(String actorUrl) async {
+  Future<ResolveResult> _fetchAndCache(
+    String actorUrl, {
+    String discoverySource = 'manual',
+  }) async {
     try {
       final response = await http.get(
         Uri.parse(actorUrl),
@@ -91,19 +107,36 @@ class ActorResolver {
       final json = jsonDecode(response.body) as Map<String, dynamic>;
       final actor = ApActor.fromJson(json);
 
+      // Preserve a higher-priority discoverySource already on this record.
+      final existing = await (db.select(db.actorCacheTable)
+            ..where((t) => t.actorUrl.equals(actorUrl)))
+          .getSingleOrNull();
+      final effectiveSource = _mergeSource(existing?.discoverySource, discoverySource);
+
       await db.into(db.actorCacheTable).insertOnConflictUpdate(
             ActorCacheTableCompanion.insert(
               actorUrl: actorUrl,
               actorJson: response.body,
               ttlSeconds: Value(ttlSeconds),
+              discoverySource: Value(effectiveSource),
             ),
           );
 
-      AppLogger.debug('Actor cached: $actorUrl', tag: 'actor_cache');
+      AppLogger.debug('Actor cached: $actorUrl [$effectiveSource]',
+          tag: 'actor_cache');
       return ResolveOk(actor);
     } catch (e) {
       return ResolveFailed('Actor fetch/parse error for $actorUrl: $e');
     }
+  }
+
+  // Returns whichever source has higher priority, keeping the existing one
+  // when priorities are equal (stable — don't thrash on re-fetch).
+  static String _mergeSource(String? existing, String incoming) {
+    if (existing == null) return incoming;
+    final existingPriority = _sourcePriority[existing] ?? 0;
+    final incomingPriority = _sourcePriority[incoming] ?? 0;
+    return incomingPriority > existingPriority ? incoming : existing;
   }
 
   Future<String?> _webFingerToUrl(String handle) async {

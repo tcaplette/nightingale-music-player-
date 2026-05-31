@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:nightingale/core/router/router_refresh_notifier.dart';
 import 'package:nightingale/features/discover/presentation/discover_screen.dart';
 import 'package:nightingale/features/library/screens/album_detail_screen.dart';
 import 'package:nightingale/features/library/screens/artist_detail_screen.dart';
@@ -21,6 +22,15 @@ import 'package:nightingale/features/social/screens/notifications_screen.dart';
 import 'package:nightingale/features/social/screens/playlist_detail_screen.dart';
 import 'package:nightingale/features/social/screens/profile_screen.dart';
 import 'package:nightingale/features/social/screens/social_feed_screen_v2.dart';
+import 'package:nightingale/features/federation/screens/federation_settings_screen.dart';
+import 'package:nightingale/features/federation/screens/sharing_settings_screen.dart';
+import 'package:nightingale/features/node_identity/screens/migration_export_screen.dart';
+import 'package:nightingale/features/settings/providers/motion_notifier.dart';
+import 'package:nightingale/features/settings/screens/appearance_settings_screen.dart';
+import 'package:nightingale/features/settings/screens/notification_settings_screen.dart';
+import 'package:nightingale/features/settings/screens/playback_settings_screen.dart';
+import 'package:nightingale/features/settings/screens/settings_screen.dart';
+import 'package:nightingale/features/social/screens/blocked_muted_screen.dart';
 import 'package:nightingale/shared/components/navigation/app_bottom_nav.dart';
 import 'package:nightingale/shared/theme/app_motion.dart';
 
@@ -45,16 +55,30 @@ abstract final class AppRoutes {
   static const String following = '/social/following';
   static const String followers = '/social/followers';
   static const String playlistDetail = '/playlists/:playlistId';
+  // Settings
+  static const String settings = '/settings';
+  static const String settingsPlayback = '/settings/playback';
+  static const String settingsAppearance = '/settings/appearance';
+  static const String settingsNotifications = '/settings/notifications';
+  static const String settingsFederation = '/settings/federation';
+  static const String settingsSharing = '/settings/sharing';
+  static const String settingsExportIdentity = '/settings/export-identity';
+  static const String settingsBlockedMuted = '/settings/blocked-muted';
 }
 
 /// Reusable fade-through page builder. All top-level routes use this
 /// to apply [AppMotion.pageTransition] duration and [AppMotion.curvePageTransition].
+/// Respects the reduce-motion setting via [motionNotifierProvider].
 Page<T> _fadePage<T>(BuildContext context, GoRouterState state, Widget child) {
+  final reduceMotion = ProviderScope.containerOf(context)
+      .read(motionNotifierProvider)
+      .valueOrNull ?? false;
+  final duration = resolvedDuration(reduceMotion, AppMotion.pageTransition);
   return CustomTransitionPage<T>(
     key: state.pageKey,
     child: child,
-    transitionDuration: AppMotion.pageTransition,
-    reverseTransitionDuration: AppMotion.pageTransition,
+    transitionDuration: duration,
+    reverseTransitionDuration: duration,
     transitionsBuilder: (context, animation, secondaryAnimation, child) =>
         FadeTransition(
           opacity: CurvedAnimation(
@@ -66,11 +90,14 @@ Page<T> _fadePage<T>(BuildContext context, GoRouterState state, Widget child) {
   );
 }
 
-/// Global router instance. Created once; redirect reads identity and onboarding
-/// state via [ProviderScope.containerOf].
-final GoRouter appRouter = GoRouter(
-  initialLocation: AppRoutes.library,
-  redirect: (context, state) {
+/// Builds the router once, wiring [RouterRefreshNotifier] so the redirect
+/// re-evaluates whenever onboarding or identity state changes asynchronously.
+GoRouter buildRouter(ProviderContainer container) {
+  final refreshNotifier = RouterRefreshNotifier(container);
+  return GoRouter(
+    initialLocation: AppRoutes.library,
+    refreshListenable: refreshNotifier,
+    redirect: (context, state) {
     developer.log('ROUTER: redirect called for ${state.matchedLocation}', name: 'nightingale.router');
     final container = ProviderScope.containerOf(context);
 
@@ -235,6 +262,56 @@ final GoRouter appRouter = GoRouter(
         return _fadePage(ctx, state, PlaylistDetailScreen(playlistUrl: playlistId));
       },
     ),
+    // Settings hub + sub-routes
+    GoRoute(
+      path: AppRoutes.settings,
+      name: 'settings',
+      pageBuilder: (ctx, state) => _fadePage(ctx, state, const SettingsScreen()),
+      routes: [
+        GoRoute(
+          path: 'playback',
+          name: 'settingsPlayback',
+          pageBuilder: (ctx, state) =>
+              _fadePage(ctx, state, const PlaybackSettingsScreen()),
+        ),
+        GoRoute(
+          path: 'appearance',
+          name: 'settingsAppearance',
+          pageBuilder: (ctx, state) =>
+              _fadePage(ctx, state, const AppearanceSettingsScreen()),
+        ),
+        GoRoute(
+          path: 'notifications',
+          name: 'settingsNotifications',
+          pageBuilder: (ctx, state) =>
+              _fadePage(ctx, state, const NotificationSettingsScreen()),
+        ),
+        GoRoute(
+          path: 'federation',
+          name: 'settingsFederation',
+          pageBuilder: (ctx, state) =>
+              _fadePage(ctx, state, const FederationSettingsScreen()),
+        ),
+        GoRoute(
+          path: 'sharing',
+          name: 'settingsSharing',
+          pageBuilder: (ctx, state) =>
+              _fadePage(ctx, state, const SharingSettingsScreen()),
+        ),
+        GoRoute(
+          path: 'export-identity',
+          name: 'settingsExportIdentity',
+          pageBuilder: (ctx, state) =>
+              _fadePage(ctx, state, const MigrationExportScreen()),
+        ),
+        GoRoute(
+          path: 'blocked-muted',
+          name: 'settingsBlockedMuted',
+          pageBuilder: (ctx, state) =>
+              _fadePage(ctx, state, const BlockedMutedScreen()),
+        ),
+      ],
+    ),
   ],
   errorBuilder: (context, state) => Scaffold(
     body: Center(
@@ -244,4 +321,5 @@ final GoRouter appRouter = GoRouter(
       ),
     ),
   ),
-);
+  );
+}

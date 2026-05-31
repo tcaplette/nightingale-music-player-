@@ -1,5 +1,3 @@
-import 'dart:developer' as developer;
-
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart' as ja;
@@ -8,15 +6,19 @@ import 'package:nightingale/core/audio/audio_source.dart' as ng;
 import 'package:nightingale/core/audio/playback_state_model.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
 import 'package:nightingale/features/library/models/track_model.dart';
+import 'package:nightingale/features/settings/models/playback_settings.dart';
 import 'package:nightingale/shared/services/haptic_service.dart';
 
 const _tag = 'playback';
 
 class PlaybackEngine {
-  PlaybackEngine._();
+  PlaybackEngine._(PlaybackSettings settings)
+      : _settings = settings,
+        _audioFocusBehaviour = settings.audioFocusBehaviour;
 
   late final ja.AudioPlayer _player;
   late final ja.ConcatenatingAudioSource _playlist;
+  final PlaybackSettings _settings;
 
   List<TrackModel> _queue = [];
   List<TrackModel> _originalQueue = [];
@@ -24,28 +26,38 @@ class PlaybackEngine {
   ShuffleMode _shuffleMode = ShuffleMode.off;
   RepeatMode _repeatMode = RepeatMode.off;
 
+  AudioFocusBehaviour _audioFocusBehaviour;
+
   final ValueNotifier<PlaybackStateModel> state = ValueNotifier(
     PlaybackStateModel.empty,
   );
 
-  static Future<PlaybackEngine> create() async {
-    final engine = PlaybackEngine._();
+  static Future<PlaybackEngine> create({
+    PlaybackSettings settings = PlaybackSettings.defaults,
+  }) async {
+    final engine = PlaybackEngine._(settings);
     await engine._init();
     return engine;
   }
 
+  void setAudioFocusBehaviour(AudioFocusBehaviour behaviour) {
+    _audioFocusBehaviour = behaviour;
+  }
+
+  void setSkipThreshold(SkipThreshold threshold) {
+    _skipThreshold = threshold.duration;
+  }
+
+  Duration _skipThreshold = const Duration(seconds: 3);
+
   Future<void> _init() async {
-    // Phase 7: buffer tuning — 5 s pre-roll, 30 s target, 120 s max.
-    // On degraded networks (< 64 kbps), just_audio reduces its target
-    // automatically once bufferForPlaybackDuration is satisfied.
+    _skipThreshold = _settings.skipThreshold.duration;
+    _audioFocusBehaviour = _settings.audioFocusBehaviour;
+
+    final bufferConfig = _bufferConfig(_settings.bufferPreset);
     _player = ja.AudioPlayer(
       audioLoadConfiguration: ja.AudioLoadConfiguration(
-        androidLoadControl: ja.AndroidLoadControl(
-          minBufferDuration: const Duration(seconds: 15),
-          maxBufferDuration: const Duration(seconds: 120),
-          bufferForPlaybackDuration: const Duration(seconds: 5),
-          bufferForPlaybackAfterRebufferDuration: const Duration(seconds: 8),
-        ),
+        androidLoadControl: bufferConfig,
       ),
     );
     _playlist = ja.ConcatenatingAudioSource(children: []);
@@ -54,18 +66,22 @@ class PlaybackEngine {
     final session = await AudioSession.instance;
     await session.configure(const AudioSessionConfiguration.music());
 
-    // Audio focus callbacks
+    // Audio focus callbacks driven by user preference
     session.interruptionEventStream.listen((event) {
+      if (_audioFocusBehaviour == AudioFocusBehaviour.doNothing) return;
       if (event.begin) {
-        if (event.type == AudioInterruptionType.duck) {
+        if (event.type == AudioInterruptionType.duck &&
+            _audioFocusBehaviour == AudioFocusBehaviour.duck) {
           _player.setVolume(0.5);
-        } else {
+        } else if (_audioFocusBehaviour == AudioFocusBehaviour.pause) {
           _player.pause();
         }
       } else {
-        if (event.type == AudioInterruptionType.duck) {
+        if (event.type == AudioInterruptionType.duck &&
+            _audioFocusBehaviour == AudioFocusBehaviour.duck) {
           _player.setVolume(1.0);
-        } else if (event.type == AudioInterruptionType.pause) {
+        } else if (event.type == AudioInterruptionType.pause &&
+            _audioFocusBehaviour == AudioFocusBehaviour.pause) {
           _player.play();
         }
       }
@@ -166,7 +182,7 @@ class PlaybackEngine {
   }
 
   Future<void> skipPrevious() async {
-    if (_player.position > const Duration(seconds: 3)) {
+    if (_player.position > _skipThreshold) {
       await _player.seek(Duration.zero);
       return;
     }
@@ -348,6 +364,29 @@ class PlaybackEngine {
       repeatMode: _repeatMode,
       streamSourceType: streamSource,
     );
+  }
+
+  static ja.AndroidLoadControl _bufferConfig(BufferPreset preset) {
+    return switch (preset) {
+      BufferPreset.efficient => const ja.AndroidLoadControl(
+          minBufferDuration: Duration(seconds: 10),
+          maxBufferDuration: Duration(seconds: 60),
+          bufferForPlaybackDuration: Duration(seconds: 3),
+          bufferForPlaybackAfterRebufferDuration: Duration(seconds: 5),
+        ),
+      BufferPreset.normal => const ja.AndroidLoadControl(
+          minBufferDuration: Duration(seconds: 15),
+          maxBufferDuration: Duration(seconds: 120),
+          bufferForPlaybackDuration: Duration(seconds: 5),
+          bufferForPlaybackAfterRebufferDuration: Duration(seconds: 8),
+        ),
+      BufferPreset.generous => const ja.AndroidLoadControl(
+          minBufferDuration: Duration(seconds: 30),
+          maxBufferDuration: Duration(seconds: 240),
+          bufferForPlaybackDuration: Duration(seconds: 8),
+          bufferForPlaybackAfterRebufferDuration: Duration(seconds: 12),
+        ),
+    };
   }
 
   Future<void> dispose() async {

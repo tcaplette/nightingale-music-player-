@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/core/di/service_locator.dart';
+import 'package:nightingale/features/settings/data/settings_repository.dart';
 
 class GroupedNotification {
   const GroupedNotification({
@@ -36,30 +37,57 @@ class NotificationsNotifier extends StateNotifier<NotificationsState> {
     load();
   }
 
-  final AppDatabase _db;
+  NotificationsNotifier.stub() : _db = null, super(const NotificationsState());
+
+  final AppDatabase? _db;
 
   Future<void> load() async {
-    if (!mounted) return;
+    final db = _db;
+    if (!mounted || db == null) return;
     state = NotificationsState(
       groups: state.groups,
       unreadCount: state.unreadCount,
       isLoading: true,
     );
 
-    final all = await (_db.select(_db.notificationsTable)
-          ..orderBy([
-            (t) => OrderingTerm(
-                  expression: t.createdAt,
-                  mode: OrderingMode.desc,
-                ),
-          ]))
-        .get();
+    final repo = sl<SettingsRepository>();
+    final notifyFollowers = await repo.isNotifyNewFollowersEnabled();
+    final notifyActivity = await repo.isNotifyActivityFeedEnabled();
+    final autoClear = await repo.getNotificationAutoClear();
+
+    // Auto-clear old read notifications if threshold is set
+    final clearThreshold = autoClear.duration;
+    if (clearThreshold != null) {
+      final cutoff = DateTime.now().subtract(clearThreshold);
+      await (db.delete(db.notificationsTable)
+            ..where((t) =>
+                t.isRead &
+                t.createdAt.isSmallerThanValue(cutoff)))
+          .go();
+    }
+
+    var query = db.select(db.notificationsTable)
+      ..orderBy([
+        (t) => OrderingTerm(
+              expression: t.createdAt,
+              mode: OrderingMode.desc,
+            ),
+      ]);
+
+    final all = await query.get();
 
     if (!mounted) return;
 
+    // Filter by notification preferences
+    final filtered = all.where((n) {
+      if (n.type == 'new_follower' && !notifyFollowers) return false;
+      if (n.type != 'new_follower' && !notifyActivity) return false;
+      return true;
+    }).toList();
+
     // Group by type + objectRef; collapse to single entry when count >= 3
     final Map<String, List<NotificationsTableData>> grouped = {};
-    for (final n in all) {
+    for (final n in filtered) {
       final key = '${n.type}:${n.objectRef}';
       grouped.putIfAbsent(key, () => []).add(n);
     }
@@ -79,7 +107,7 @@ class NotificationsNotifier extends StateNotifier<NotificationsState> {
         (a, b) => b.latest.createdAt.compareTo(a.latest.createdAt),
       );
 
-    final unread = all.where((n) => !n.isRead).length;
+    final unread = filtered.where((n) => !n.isRead).length;
 
     if (!mounted) return;
     state = NotificationsState(
@@ -90,7 +118,9 @@ class NotificationsNotifier extends StateNotifier<NotificationsState> {
   }
 
   Future<void> markAllRead() async {
-    await (_db.update(_db.notificationsTable)).write(
+    final db = _db;
+    if (db == null) return;
+    await (db.update(db.notificationsTable)).write(
       const NotificationsTableCompanion(isRead: Value(true)),
     );
     await load();

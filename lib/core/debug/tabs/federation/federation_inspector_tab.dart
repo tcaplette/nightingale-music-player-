@@ -6,6 +6,8 @@ import 'package:nightingale/core/debug/tabs/federation/panels/incoming_activity_
 import 'package:nightingale/core/debug/tabs/federation/panels/incoming_library_feed_panel.dart';
 import 'package:nightingale/core/debug/tabs/federation/panels/library_publishing_panel.dart';
 import 'package:nightingale/core/debug/tabs/federation/panels/moderation_state_panel.dart';
+import 'package:nightingale/core/debug/tabs/federation/panels/mdns_debug_panel.dart';
+import 'package:nightingale/core/debug/tabs/federation/panels/node_identity_panel.dart';
 import 'package:nightingale/core/debug/tabs/federation/panels/outgoing_activity_log_panel.dart';
 import 'package:nightingale/core/debug/tabs/federation/panels/reachability_status_panel.dart';
 import 'package:nightingale/core/debug/tabs/federation/panels/stream_inspector_panel.dart';
@@ -21,7 +23,7 @@ class FederationInspectorTab extends StatelessWidget {
   Widget build(BuildContext context) {
     assert(kDebugMode, 'FederationInspectorTab must only be used in debug builds');
     return DefaultTabController(
-      length: 10,
+      length: 12,
       child: Column(
         children: [
           const TabBar(
@@ -29,6 +31,8 @@ class FederationInspectorTab extends StatelessWidget {
             tabAlignment: TabAlignment.start,
             labelStyle: TextStyle(fontSize: 10),
             tabs: [
+              Tab(text: 'Identity'),
+              Tab(text: 'mDNS'),
               Tab(text: 'Outgoing'),
               Tab(text: 'Incoming'),
               Tab(text: 'Actors'),
@@ -45,6 +49,8 @@ class FederationInspectorTab extends StatelessWidget {
           const Expanded(
             child: TabBarView(
               children: [
+                NodeIdentityPanel(),
+                MdnsDebugPanel(),
                 OutgoingActivityLogPanel(),
                 IncomingActivityLogPanel(),
                 ActorCachePanel(),

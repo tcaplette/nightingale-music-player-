@@ -1441,6 +1441,18 @@ class $NodeIdentityTableTable extends NodeIdentityTable
     requiredDuringInsert: false,
     defaultValue: currentDateAndTime,
   );
+  static const VerificationMeta _nodePublicAddressMeta = const VerificationMeta(
+    'nodePublicAddress',
+  );
+  @override
+  late final GeneratedColumn<String> nodePublicAddress =
+      GeneratedColumn<String>(
+        'node_public_address',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -1449,6 +1461,7 @@ class $NodeIdentityTableTable extends NodeIdentityTable
     preferredUsername,
     displayName,
     createdAt,
+    nodePublicAddress,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1512,6 +1525,15 @@ class $NodeIdentityTableTable extends NodeIdentityTable
         createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
       );
     }
+    if (data.containsKey('node_public_address')) {
+      context.handle(
+        _nodePublicAddressMeta,
+        nodePublicAddress.isAcceptableOrUnknown(
+          data['node_public_address']!,
+          _nodePublicAddressMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -1545,6 +1567,10 @@ class $NodeIdentityTableTable extends NodeIdentityTable
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
       )!,
+      nodePublicAddress: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}node_public_address'],
+      ),
     );
   }
 
@@ -1562,6 +1588,7 @@ class NodeIdentityTableData extends DataClass
   final String preferredUsername;
   final String displayName;
   final DateTime createdAt;
+  final String? nodePublicAddress;
   const NodeIdentityTableData({
     required this.id,
     required this.actorUrl,
@@ -1569,6 +1596,7 @@ class NodeIdentityTableData extends DataClass
     required this.preferredUsername,
     required this.displayName,
     required this.createdAt,
+    this.nodePublicAddress,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1579,6 +1607,9 @@ class NodeIdentityTableData extends DataClass
     map['preferred_username'] = Variable<String>(preferredUsername);
     map['display_name'] = Variable<String>(displayName);
     map['created_at'] = Variable<DateTime>(createdAt);
+    if (!nullToAbsent || nodePublicAddress != null) {
+      map['node_public_address'] = Variable<String>(nodePublicAddress);
+    }
     return map;
   }
 
@@ -1590,6 +1621,9 @@ class NodeIdentityTableData extends DataClass
       preferredUsername: Value(preferredUsername),
       displayName: Value(displayName),
       createdAt: Value(createdAt),
+      nodePublicAddress: nodePublicAddress == null && nullToAbsent
+          ? const Value.absent()
+          : Value(nodePublicAddress),
     );
   }
 
@@ -1605,6 +1639,9 @@ class NodeIdentityTableData extends DataClass
       preferredUsername: serializer.fromJson<String>(json['preferredUsername']),
       displayName: serializer.fromJson<String>(json['displayName']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      nodePublicAddress: serializer.fromJson<String?>(
+        json['nodePublicAddress'],
+      ),
     );
   }
   @override
@@ -1617,6 +1654,7 @@ class NodeIdentityTableData extends DataClass
       'preferredUsername': serializer.toJson<String>(preferredUsername),
       'displayName': serializer.toJson<String>(displayName),
       'createdAt': serializer.toJson<DateTime>(createdAt),
+      'nodePublicAddress': serializer.toJson<String?>(nodePublicAddress),
     };
   }
 
@@ -1627,6 +1665,7 @@ class NodeIdentityTableData extends DataClass
     String? preferredUsername,
     String? displayName,
     DateTime? createdAt,
+    Value<String?> nodePublicAddress = const Value.absent(),
   }) => NodeIdentityTableData(
     id: id ?? this.id,
     actorUrl: actorUrl ?? this.actorUrl,
@@ -1634,6 +1673,9 @@ class NodeIdentityTableData extends DataClass
     preferredUsername: preferredUsername ?? this.preferredUsername,
     displayName: displayName ?? this.displayName,
     createdAt: createdAt ?? this.createdAt,
+    nodePublicAddress: nodePublicAddress.present
+        ? nodePublicAddress.value
+        : this.nodePublicAddress,
   );
   NodeIdentityTableData copyWithCompanion(NodeIdentityTableCompanion data) {
     return NodeIdentityTableData(
@@ -1649,6 +1691,9 @@ class NodeIdentityTableData extends DataClass
           ? data.displayName.value
           : this.displayName,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      nodePublicAddress: data.nodePublicAddress.present
+          ? data.nodePublicAddress.value
+          : this.nodePublicAddress,
     );
   }
 
@@ -1660,7 +1705,8 @@ class NodeIdentityTableData extends DataClass
           ..write('publicKeyPem: $publicKeyPem, ')
           ..write('preferredUsername: $preferredUsername, ')
           ..write('displayName: $displayName, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('nodePublicAddress: $nodePublicAddress')
           ..write(')'))
         .toString();
   }
@@ -1673,6 +1719,7 @@ class NodeIdentityTableData extends DataClass
     preferredUsername,
     displayName,
     createdAt,
+    nodePublicAddress,
   );
   @override
   bool operator ==(Object other) =>
@@ -1683,7 +1730,8 @@ class NodeIdentityTableData extends DataClass
           other.publicKeyPem == this.publicKeyPem &&
           other.preferredUsername == this.preferredUsername &&
           other.displayName == this.displayName &&
-          other.createdAt == this.createdAt);
+          other.createdAt == this.createdAt &&
+          other.nodePublicAddress == this.nodePublicAddress);
 }
 
 class NodeIdentityTableCompanion
@@ -1694,6 +1742,7 @@ class NodeIdentityTableCompanion
   final Value<String> preferredUsername;
   final Value<String> displayName;
   final Value<DateTime> createdAt;
+  final Value<String?> nodePublicAddress;
   const NodeIdentityTableCompanion({
     this.id = const Value.absent(),
     this.actorUrl = const Value.absent(),
@@ -1701,6 +1750,7 @@ class NodeIdentityTableCompanion
     this.preferredUsername = const Value.absent(),
     this.displayName = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.nodePublicAddress = const Value.absent(),
   });
   NodeIdentityTableCompanion.insert({
     this.id = const Value.absent(),
@@ -1709,6 +1759,7 @@ class NodeIdentityTableCompanion
     required String preferredUsername,
     required String displayName,
     this.createdAt = const Value.absent(),
+    this.nodePublicAddress = const Value.absent(),
   }) : actorUrl = Value(actorUrl),
        publicKeyPem = Value(publicKeyPem),
        preferredUsername = Value(preferredUsername),
@@ -1720,6 +1771,7 @@ class NodeIdentityTableCompanion
     Expression<String>? preferredUsername,
     Expression<String>? displayName,
     Expression<DateTime>? createdAt,
+    Expression<String>? nodePublicAddress,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -1728,6 +1780,7 @@ class NodeIdentityTableCompanion
       if (preferredUsername != null) 'preferred_username': preferredUsername,
       if (displayName != null) 'display_name': displayName,
       if (createdAt != null) 'created_at': createdAt,
+      if (nodePublicAddress != null) 'node_public_address': nodePublicAddress,
     });
   }
 
@@ -1738,6 +1791,7 @@ class NodeIdentityTableCompanion
     Value<String>? preferredUsername,
     Value<String>? displayName,
     Value<DateTime>? createdAt,
+    Value<String?>? nodePublicAddress,
   }) {
     return NodeIdentityTableCompanion(
       id: id ?? this.id,
@@ -1746,6 +1800,7 @@ class NodeIdentityTableCompanion
       preferredUsername: preferredUsername ?? this.preferredUsername,
       displayName: displayName ?? this.displayName,
       createdAt: createdAt ?? this.createdAt,
+      nodePublicAddress: nodePublicAddress ?? this.nodePublicAddress,
     );
   }
 
@@ -1770,6 +1825,9 @@ class NodeIdentityTableCompanion
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
+    if (nodePublicAddress.present) {
+      map['node_public_address'] = Variable<String>(nodePublicAddress.value);
+    }
     return map;
   }
 
@@ -1781,7 +1839,8 @@ class NodeIdentityTableCompanion
           ..write('publicKeyPem: $publicKeyPem, ')
           ..write('preferredUsername: $preferredUsername, ')
           ..write('displayName: $displayName, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('nodePublicAddress: $nodePublicAddress')
           ..write(')'))
         .toString();
   }
@@ -3003,6 +3062,18 @@ class $ActorCacheTableTable extends ActorCacheTable
     requiredDuringInsert: false,
     defaultValue: const Constant(900),
   );
+  static const VerificationMeta _discoverySourceMeta = const VerificationMeta(
+    'discoverySource',
+  );
+  @override
+  late final GeneratedColumn<String> discoverySource = GeneratedColumn<String>(
+    'discovery_source',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('manual'),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     rowId,
@@ -3010,6 +3081,7 @@ class $ActorCacheTableTable extends ActorCacheTable
     actorJson,
     cachedAt,
     ttlSeconds,
+    discoverySource,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -3057,6 +3129,15 @@ class $ActorCacheTableTable extends ActorCacheTable
         ttlSeconds.isAcceptableOrUnknown(data['ttl_seconds']!, _ttlSecondsMeta),
       );
     }
+    if (data.containsKey('discovery_source')) {
+      context.handle(
+        _discoverySourceMeta,
+        discoverySource.isAcceptableOrUnknown(
+          data['discovery_source']!,
+          _discoverySourceMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -3086,6 +3167,10 @@ class $ActorCacheTableTable extends ActorCacheTable
         DriftSqlType.int,
         data['${effectivePrefix}ttl_seconds'],
       )!,
+      discoverySource: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}discovery_source'],
+      )!,
     );
   }
 
@@ -3102,12 +3187,14 @@ class ActorCacheTableData extends DataClass
   final String actorJson;
   final DateTime cachedAt;
   final int ttlSeconds;
+  final String discoverySource;
   const ActorCacheTableData({
     required this.rowId,
     required this.actorUrl,
     required this.actorJson,
     required this.cachedAt,
     required this.ttlSeconds,
+    required this.discoverySource,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -3117,6 +3204,7 @@ class ActorCacheTableData extends DataClass
     map['actor_json'] = Variable<String>(actorJson);
     map['cached_at'] = Variable<DateTime>(cachedAt);
     map['ttl_seconds'] = Variable<int>(ttlSeconds);
+    map['discovery_source'] = Variable<String>(discoverySource);
     return map;
   }
 
@@ -3127,6 +3215,7 @@ class ActorCacheTableData extends DataClass
       actorJson: Value(actorJson),
       cachedAt: Value(cachedAt),
       ttlSeconds: Value(ttlSeconds),
+      discoverySource: Value(discoverySource),
     );
   }
 
@@ -3141,6 +3230,7 @@ class ActorCacheTableData extends DataClass
       actorJson: serializer.fromJson<String>(json['actorJson']),
       cachedAt: serializer.fromJson<DateTime>(json['cachedAt']),
       ttlSeconds: serializer.fromJson<int>(json['ttlSeconds']),
+      discoverySource: serializer.fromJson<String>(json['discoverySource']),
     );
   }
   @override
@@ -3152,6 +3242,7 @@ class ActorCacheTableData extends DataClass
       'actorJson': serializer.toJson<String>(actorJson),
       'cachedAt': serializer.toJson<DateTime>(cachedAt),
       'ttlSeconds': serializer.toJson<int>(ttlSeconds),
+      'discoverySource': serializer.toJson<String>(discoverySource),
     };
   }
 
@@ -3161,12 +3252,14 @@ class ActorCacheTableData extends DataClass
     String? actorJson,
     DateTime? cachedAt,
     int? ttlSeconds,
+    String? discoverySource,
   }) => ActorCacheTableData(
     rowId: rowId ?? this.rowId,
     actorUrl: actorUrl ?? this.actorUrl,
     actorJson: actorJson ?? this.actorJson,
     cachedAt: cachedAt ?? this.cachedAt,
     ttlSeconds: ttlSeconds ?? this.ttlSeconds,
+    discoverySource: discoverySource ?? this.discoverySource,
   );
   ActorCacheTableData copyWithCompanion(ActorCacheTableCompanion data) {
     return ActorCacheTableData(
@@ -3177,6 +3270,9 @@ class ActorCacheTableData extends DataClass
       ttlSeconds: data.ttlSeconds.present
           ? data.ttlSeconds.value
           : this.ttlSeconds,
+      discoverySource: data.discoverySource.present
+          ? data.discoverySource.value
+          : this.discoverySource,
     );
   }
 
@@ -3187,14 +3283,21 @@ class ActorCacheTableData extends DataClass
           ..write('actorUrl: $actorUrl, ')
           ..write('actorJson: $actorJson, ')
           ..write('cachedAt: $cachedAt, ')
-          ..write('ttlSeconds: $ttlSeconds')
+          ..write('ttlSeconds: $ttlSeconds, ')
+          ..write('discoverySource: $discoverySource')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(rowId, actorUrl, actorJson, cachedAt, ttlSeconds);
+  int get hashCode => Object.hash(
+    rowId,
+    actorUrl,
+    actorJson,
+    cachedAt,
+    ttlSeconds,
+    discoverySource,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -3203,7 +3306,8 @@ class ActorCacheTableData extends DataClass
           other.actorUrl == this.actorUrl &&
           other.actorJson == this.actorJson &&
           other.cachedAt == this.cachedAt &&
-          other.ttlSeconds == this.ttlSeconds);
+          other.ttlSeconds == this.ttlSeconds &&
+          other.discoverySource == this.discoverySource);
 }
 
 class ActorCacheTableCompanion extends UpdateCompanion<ActorCacheTableData> {
@@ -3212,12 +3316,14 @@ class ActorCacheTableCompanion extends UpdateCompanion<ActorCacheTableData> {
   final Value<String> actorJson;
   final Value<DateTime> cachedAt;
   final Value<int> ttlSeconds;
+  final Value<String> discoverySource;
   const ActorCacheTableCompanion({
     this.rowId = const Value.absent(),
     this.actorUrl = const Value.absent(),
     this.actorJson = const Value.absent(),
     this.cachedAt = const Value.absent(),
     this.ttlSeconds = const Value.absent(),
+    this.discoverySource = const Value.absent(),
   });
   ActorCacheTableCompanion.insert({
     this.rowId = const Value.absent(),
@@ -3225,6 +3331,7 @@ class ActorCacheTableCompanion extends UpdateCompanion<ActorCacheTableData> {
     required String actorJson,
     this.cachedAt = const Value.absent(),
     this.ttlSeconds = const Value.absent(),
+    this.discoverySource = const Value.absent(),
   }) : actorUrl = Value(actorUrl),
        actorJson = Value(actorJson);
   static Insertable<ActorCacheTableData> custom({
@@ -3233,6 +3340,7 @@ class ActorCacheTableCompanion extends UpdateCompanion<ActorCacheTableData> {
     Expression<String>? actorJson,
     Expression<DateTime>? cachedAt,
     Expression<int>? ttlSeconds,
+    Expression<String>? discoverySource,
   }) {
     return RawValuesInsertable({
       if (rowId != null) 'row_id': rowId,
@@ -3240,6 +3348,7 @@ class ActorCacheTableCompanion extends UpdateCompanion<ActorCacheTableData> {
       if (actorJson != null) 'actor_json': actorJson,
       if (cachedAt != null) 'cached_at': cachedAt,
       if (ttlSeconds != null) 'ttl_seconds': ttlSeconds,
+      if (discoverySource != null) 'discovery_source': discoverySource,
     });
   }
 
@@ -3249,6 +3358,7 @@ class ActorCacheTableCompanion extends UpdateCompanion<ActorCacheTableData> {
     Value<String>? actorJson,
     Value<DateTime>? cachedAt,
     Value<int>? ttlSeconds,
+    Value<String>? discoverySource,
   }) {
     return ActorCacheTableCompanion(
       rowId: rowId ?? this.rowId,
@@ -3256,6 +3366,7 @@ class ActorCacheTableCompanion extends UpdateCompanion<ActorCacheTableData> {
       actorJson: actorJson ?? this.actorJson,
       cachedAt: cachedAt ?? this.cachedAt,
       ttlSeconds: ttlSeconds ?? this.ttlSeconds,
+      discoverySource: discoverySource ?? this.discoverySource,
     );
   }
 
@@ -3277,6 +3388,9 @@ class ActorCacheTableCompanion extends UpdateCompanion<ActorCacheTableData> {
     if (ttlSeconds.present) {
       map['ttl_seconds'] = Variable<int>(ttlSeconds.value);
     }
+    if (discoverySource.present) {
+      map['discovery_source'] = Variable<String>(discoverySource.value);
+    }
     return map;
   }
 
@@ -3287,7 +3401,8 @@ class ActorCacheTableCompanion extends UpdateCompanion<ActorCacheTableData> {
           ..write('actorUrl: $actorUrl, ')
           ..write('actorJson: $actorJson, ')
           ..write('cachedAt: $cachedAt, ')
-          ..write('ttlSeconds: $ttlSeconds')
+          ..write('ttlSeconds: $ttlSeconds, ')
+          ..write('discoverySource: $discoverySource')
           ..write(')'))
         .toString();
   }
@@ -11715,6 +11830,7 @@ typedef $$NodeIdentityTableTableCreateCompanionBuilder =
       required String preferredUsername,
       required String displayName,
       Value<DateTime> createdAt,
+      Value<String?> nodePublicAddress,
     });
 typedef $$NodeIdentityTableTableUpdateCompanionBuilder =
     NodeIdentityTableCompanion Function({
@@ -11724,6 +11840,7 @@ typedef $$NodeIdentityTableTableUpdateCompanionBuilder =
       Value<String> preferredUsername,
       Value<String> displayName,
       Value<DateTime> createdAt,
+      Value<String?> nodePublicAddress,
     });
 
 class $$NodeIdentityTableTableFilterComposer
@@ -11762,6 +11879,11 @@ class $$NodeIdentityTableTableFilterComposer
 
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get nodePublicAddress => $composableBuilder(
+    column: $table.nodePublicAddress,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -11804,6 +11926,11 @@ class $$NodeIdentityTableTableOrderingComposer
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get nodePublicAddress => $composableBuilder(
+    column: $table.nodePublicAddress,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$NodeIdentityTableTableAnnotationComposer
@@ -11838,6 +11965,11 @@ class $$NodeIdentityTableTableAnnotationComposer
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get nodePublicAddress => $composableBuilder(
+    column: $table.nodePublicAddress,
+    builder: (column) => column,
+  );
 }
 
 class $$NodeIdentityTableTableTableManager
@@ -11886,6 +12018,7 @@ class $$NodeIdentityTableTableTableManager
                 Value<String> preferredUsername = const Value.absent(),
                 Value<String> displayName = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
+                Value<String?> nodePublicAddress = const Value.absent(),
               }) => NodeIdentityTableCompanion(
                 id: id,
                 actorUrl: actorUrl,
@@ -11893,6 +12026,7 @@ class $$NodeIdentityTableTableTableManager
                 preferredUsername: preferredUsername,
                 displayName: displayName,
                 createdAt: createdAt,
+                nodePublicAddress: nodePublicAddress,
               ),
           createCompanionCallback:
               ({
@@ -11902,6 +12036,7 @@ class $$NodeIdentityTableTableTableManager
                 required String preferredUsername,
                 required String displayName,
                 Value<DateTime> createdAt = const Value.absent(),
+                Value<String?> nodePublicAddress = const Value.absent(),
               }) => NodeIdentityTableCompanion.insert(
                 id: id,
                 actorUrl: actorUrl,
@@ -11909,6 +12044,7 @@ class $$NodeIdentityTableTableTableManager
                 preferredUsername: preferredUsername,
                 displayName: displayName,
                 createdAt: createdAt,
+                nodePublicAddress: nodePublicAddress,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
@@ -12539,6 +12675,7 @@ typedef $$ActorCacheTableTableCreateCompanionBuilder =
       required String actorJson,
       Value<DateTime> cachedAt,
       Value<int> ttlSeconds,
+      Value<String> discoverySource,
     });
 typedef $$ActorCacheTableTableUpdateCompanionBuilder =
     ActorCacheTableCompanion Function({
@@ -12547,6 +12684,7 @@ typedef $$ActorCacheTableTableUpdateCompanionBuilder =
       Value<String> actorJson,
       Value<DateTime> cachedAt,
       Value<int> ttlSeconds,
+      Value<String> discoverySource,
     });
 
 class $$ActorCacheTableTableFilterComposer
@@ -12580,6 +12718,11 @@ class $$ActorCacheTableTableFilterComposer
 
   ColumnFilters<int> get ttlSeconds => $composableBuilder(
     column: $table.ttlSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get discoverySource => $composableBuilder(
+    column: $table.discoverySource,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -12617,6 +12760,11 @@ class $$ActorCacheTableTableOrderingComposer
     column: $table.ttlSeconds,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get discoverySource => $composableBuilder(
+    column: $table.discoverySource,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$ActorCacheTableTableAnnotationComposer
@@ -12642,6 +12790,11 @@ class $$ActorCacheTableTableAnnotationComposer
 
   GeneratedColumn<int> get ttlSeconds => $composableBuilder(
     column: $table.ttlSeconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get discoverySource => $composableBuilder(
+    column: $table.discoverySource,
     builder: (column) => column,
   );
 }
@@ -12688,12 +12841,14 @@ class $$ActorCacheTableTableTableManager
                 Value<String> actorJson = const Value.absent(),
                 Value<DateTime> cachedAt = const Value.absent(),
                 Value<int> ttlSeconds = const Value.absent(),
+                Value<String> discoverySource = const Value.absent(),
               }) => ActorCacheTableCompanion(
                 rowId: rowId,
                 actorUrl: actorUrl,
                 actorJson: actorJson,
                 cachedAt: cachedAt,
                 ttlSeconds: ttlSeconds,
+                discoverySource: discoverySource,
               ),
           createCompanionCallback:
               ({
@@ -12702,12 +12857,14 @@ class $$ActorCacheTableTableTableManager
                 required String actorJson,
                 Value<DateTime> cachedAt = const Value.absent(),
                 Value<int> ttlSeconds = const Value.absent(),
+                Value<String> discoverySource = const Value.absent(),
               }) => ActorCacheTableCompanion.insert(
                 rowId: rowId,
                 actorUrl: actorUrl,
                 actorJson: actorJson,
                 cachedAt: cachedAt,
                 ttlSeconds: ttlSeconds,
+                discoverySource: discoverySource,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

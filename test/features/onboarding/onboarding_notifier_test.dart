@@ -6,6 +6,7 @@ import 'package:nightingale/features/onboarding/secure_storage_service.dart';
 /// In-memory stub for testing.
 class _InMemoryStorageService implements SecureStorageService {
   bool _value;
+  String? _mastodonHandle;
   _InMemoryStorageService({bool initialValue = false}) : _value = initialValue;
 
   @override
@@ -13,6 +14,21 @@ class _InMemoryStorageService implements SecureStorageService {
 
   @override
   Future<void> setOnboardingComplete(bool value) async => _value = value;
+
+  @override
+  Future<bool> getDiscoveryShown() async => false;
+
+  @override
+  Future<void> setDiscoveryShown(bool value) async {}
+
+  @override
+  Future<String?> getMastodonHandle() async => _mastodonHandle;
+
+  @override
+  Future<void> setMastodonHandle(String handle) async => _mastodonHandle = handle;
+
+  @override
+  Future<void> clearMastodonHandle() async => _mastodonHandle = null;
 }
 
 void main() {

@@ -16,7 +16,11 @@ import 'package:nightingale/core/http_server/federation_server.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
 import 'package:nightingale/core/repositories/app_info_repository.dart';
 import 'package:nightingale/features/federation/delivery/activity_delivery_service.dart';
-import 'package:nightingale/features/federation/delivery/relay_client.dart';
+import 'package:nightingale/features/federation/discovery/mastodon_bridge_service.dart';
+import 'package:nightingale/features/federation/discovery/peer_discovery_service.dart';
+import 'package:nightingale/features/federation/discovery/peer_exchange_service.dart';
+import 'package:nightingale/features/federation/mdns/mdns_advertiser.dart';
+import 'package:nightingale/features/federation/mdns/mdns_discovery_service.dart';
 import 'package:nightingale/features/federation/moderation/moderation_repository.dart';
 import 'package:nightingale/features/federation/moderation/rate_limiter.dart';
 import 'package:nightingale/features/federation/deduplication/acoustic_fingerprint_service.dart';
@@ -24,6 +28,7 @@ import 'package:nightingale/features/federation/library/remote_library_fetcher.d
 import 'package:nightingale/features/federation/publishing/library_publisher.dart';
 import 'package:nightingale/features/federation/publishing/listen_activity_publisher.dart';
 import 'package:nightingale/features/federation/reachability/node_reachability_service.dart';
+import 'package:nightingale/features/federation/stun/stun_address_resolver.dart';
 import 'package:nightingale/core/repositories/activity_repository.dart';
 import 'package:nightingale/core/repositories/social_repository.dart';
 import 'package:nightingale/features/federation/social/social_subscribing_service.dart';
@@ -31,10 +36,12 @@ import 'package:nightingale/features/federation/streaming/audio_cache_manager.da
 import 'package:nightingale/features/federation/streaming/stream_resolver.dart';
 import 'package:nightingale/features/library/library_repository.dart';
 import 'package:nightingale/features/library/library_repository_impl.dart';
+import 'package:nightingale/features/node_identity/local_address_resolver.dart';
 import 'package:nightingale/features/node_identity/migration_service.dart';
 import 'package:nightingale/features/node_identity/node_identity_repository.dart';
 import 'package:nightingale/features/node_identity/node_identity_repository_impl.dart';
 import 'package:nightingale/features/recommendations/data/cold_start_settings_repository.dart';
+import 'package:nightingale/features/settings/data/settings_repository.dart';
 import 'package:nightingale/features/recommendations/data/global_trending_relay_service.dart';
 import 'package:nightingale/features/recommendations/data/network_signal_ingester.dart';
 import 'package:nightingale/features/recommendations/data/node_discovery_service.dart';
@@ -53,14 +60,22 @@ final GetIt _sl = GetIt.instance;
 
 T sl<T extends Object>() => _sl<T>();
 
-// Relay base URL — empty means relay is not configured.
-// Override via environment variable or build config in production.
-const _kRelayBaseUrl = String.fromEnvironment('RELAY_BASE_URL', defaultValue: '');
-
-// Node base URL — used to construct actor and endpoint URLs.
+// Node base URL — legacy fallback; actor URLs are now built from resolved LAN IP.
 const _kNodeBaseUrl = String.fromEnvironment(
   'NODE_BASE_URL',
   defaultValue: 'http://localhost',
+);
+
+// Stable federation server port (default 7777).
+const _kFederationPort = int.fromEnvironment(
+  'FEDERATION_PORT',
+  defaultValue: 7777,
+);
+
+// STUN server used for public address discovery.
+const _kStunServer = String.fromEnvironment(
+  'STUN_SERVER',
+  defaultValue: 'stun.l.google.com:19302',
 );
 
 Future<void> setupServiceLocator() async {
@@ -73,7 +88,7 @@ Future<void> setupServiceLocator() async {
   );
   developer.log('DI: basics registered', name: 'nightingale.di');
 
-  // Database (unencrypted for music catalog; federation tables added in Phase 3 migration)
+  // Database
   final db = AppDatabase();
   _sl.registerSingleton<AppDatabase>(db);
   developer.log('DI: database registered', name: 'nightingale.di');
@@ -83,8 +98,6 @@ Future<void> setupServiceLocator() async {
   _sl.registerSingleton<DatabaseIntegrityService>(dbIntegrity);
   final integrityResult = await dbIntegrity.checkAndRepair();
   if (integrityResult == IntegrityCheckResult.unrecoverable) {
-    // Signal to the app layer that a user-prompted rescan is required.
-    // The app reads this flag from the service locator during first render.
     AppLogger.error('DB unrecoverable at startup — rescan required', tag: 'di');
   }
   developer.log('DI: integrity check = $integrityResult', name: 'nightingale.di');
@@ -95,9 +108,14 @@ Future<void> setupServiceLocator() async {
   );
   developer.log('DI: library repo registered', name: 'nightingale.di');
 
-  // Playback engine (async init — creates AudioPlayer, configures AudioSession)
+  // Settings repository — registered early so PlaybackEngine can read its values
+  final settingsRepo = SettingsRepository();
+  _sl.registerSingleton<SettingsRepository>(settingsRepo);
+
+  // Playback engine
   developer.log('DI: creating PlaybackEngine...', name: 'nightingale.di');
-  final engine = await PlaybackEngine.create();
+  final playbackSettings = await settingsRepo.loadPlaybackSettings();
+  final engine = await PlaybackEngine.create(settings: playbackSettings);
   developer.log('DI: PlaybackEngine created', name: 'nightingale.di');
   _sl.registerSingleton<PlaybackEngine>(engine);
 
@@ -112,8 +130,13 @@ Future<void> setupServiceLocator() async {
     NodeIdentityRepositoryImpl(
       db: db,
       crypto: crypto,
-      baseUrl: _kNodeBaseUrl,
     ),
+  );
+
+  // Address resolvers
+  _sl.registerSingleton<LocalAddressResolver>(LocalAddressResolver());
+  _sl.registerSingleton<StunAddressResolver>(
+    StunAddressResolver(stunServer: _kStunServer),
   );
 
   // Moderation
@@ -123,32 +146,21 @@ Future<void> setupServiceLocator() async {
   // Actor resolver (cache-backed)
   _sl.registerSingleton<ActorResolver>(ActorResolver(db: db));
 
-  // HTTP Signature service — keyId determined after identity is ready
-  // (lazy: keyId is read from the identity repo on first use)
+  // HTTP Signature service — keyId is built from the node base URL at DI time.
+  // Once identity is set up the actual actor URL is used. The keyId here acts
+  // as a best-effort placeholder for pre-onboarding signing scenarios.
   _sl.registerLazySingleton<HttpSignatureService>(() {
-    final identityRepo = _sl<NodeIdentityRepository>();
-    // keyId is constructed synchronously using the actor URL pattern
-    // The actual actor URL is fetched asynchronously on first sign/verify.
     return HttpSignatureService(
       crypto: crypto,
       keyId: '$_kNodeBaseUrl/users/node#main-key',
     );
   });
 
-  // Relay client
-  _sl.registerSingleton<RelayClient>(
-    RelayClient(
-      relayBaseUrl: _kRelayBaseUrl,
-      sigService: _sl<HttpSignatureService>(),
-    ),
-  );
-
-  // Activity delivery
+  // Activity delivery (no relay — pure queue-and-retry)
   _sl.registerSingleton<ActivityDeliveryService>(
     ActivityDeliveryService(
       db: db,
       sigService: _sl<HttpSignatureService>(),
-      relayClient: _sl<RelayClient>(),
       moderation: _sl<ModerationRepository>(),
     ),
   );
@@ -195,6 +207,16 @@ Future<void> setupServiceLocator() async {
     ),
   );
 
+  // Peer exchange — background actor cache expansion on follow
+  _sl.registerSingleton<PeerExchangeService>(
+    PeerExchangeService(actorResolver: _sl<ActorResolver>()),
+  );
+
+  // Mastodon bridge — social graph import via x-nightingale-actor-url
+  _sl.registerSingleton<MastodonBridgeService>(
+    MastodonBridgeService(actorResolver: _sl<ActorResolver>()),
+  );
+
   // Social subscribing
   _sl.registerSingleton<SocialSubscribingService>(
     SocialSubscribingService(
@@ -202,20 +224,37 @@ Future<void> setupServiceLocator() async {
       actorResolver: _sl<ActorResolver>(),
       delivery: _sl<ActivityDeliveryService>(),
       identityRepo: _sl<NodeIdentityRepository>(),
+      peerExchange: _sl<PeerExchangeService>(),
     ),
   );
 
-  // Node reachability
-  _sl.registerSingleton<NodeReachabilityService>(NodeReachabilityService());
+  // mDNS discovery
+  final mdnsDiscovery = MdnsDiscoveryService();
+  _sl.registerSingleton<MdnsDiscoveryService>(mdnsDiscovery);
+  mdnsDiscovery.startBrowsing().ignore();
 
-  // Audio cache manager (registered before StreamResolver so it can be injected)
+  // Node reachability (mDNS-aware)
+  final reachability = NodeReachabilityService();
+  reachability.injectMdns(mdnsDiscovery);
+  _sl.registerSingleton<NodeReachabilityService>(reachability);
+
+  // Peer discovery — username search across mDNS, actor cache, social graph,
+  // and the bootstrap discovery directory
+  _sl.registerSingleton<PeerDiscoveryService>(
+    PeerDiscoveryService(
+      db: db,
+      actorResolver: _sl<ActorResolver>(),
+      mdns: mdnsDiscovery,
+    ),
+  );
+
+  // Audio cache manager
   _sl.registerSingleton<AudioCacheManager>(AudioCacheManager(db: db));
 
-  // Stream resolver
+  // Stream resolver (direct → cache → unavailable; no relay)
   _sl.registerSingleton<StreamResolver>(
     StreamResolver(
       actorResolver: _sl<ActorResolver>(),
-      relayClient: _sl<RelayClient>(),
       reachability: _sl<NodeReachabilityService>(),
       cacheManager: _sl<AudioCacheManager>(),
     ),
@@ -246,13 +285,15 @@ Future<void> setupServiceLocator() async {
 
   // Embedded federation HTTP server
   developer.log('DI: creating FederationServer...', name: 'nightingale.di');
-  final server = FederationServer();
+  final server = FederationServer(preferredPort: _kFederationPort);
   _sl.registerSingleton<FederationServer>(server);
-  // Start server on launch; errors are non-fatal
   try {
     developer.log('DI: starting FederationServer...', name: 'nightingale.di');
     await server.start(router: buildFederationRouter());
-    developer.log('DI: FederationServer started on port ${server.currentPort}', name: 'nightingale.di');
+    developer.log(
+      'DI: FederationServer started on port ${server.currentPort}',
+      name: 'nightingale.di',
+    );
     AppLogger.info(
       'FederationServer started on port ${server.currentPort}',
       tag: 'di',
@@ -260,6 +301,24 @@ Future<void> setupServiceLocator() async {
   } catch (e) {
     developer.log('DI: FederationServer failed: $e', name: 'nightingale.di');
     AppLogger.error('FederationServer failed to start: $e', tag: 'di');
+  }
+
+  // mDNS advertiser — start after server is bound so port is known
+  final identity = _sl<NodeIdentityRepository>();
+  String? username;
+  try {
+    final actor = await identity.getLocalActor();
+    username = actor.preferredUsername;
+  } catch (_) {
+    // Identity may not exist yet (first launch / pre-onboarding).
+  }
+  final advertiser = MdnsAdvertiser(
+    username: username ?? 'nightingale',
+    port: server.currentPort ?? _kFederationPort,
+  );
+  _sl.registerSingleton<MdnsAdvertiser>(advertiser);
+  if (username != null) {
+    advertiser.start().ignore();
   }
 
   // Startup delivery sweep — re-enqueue stale pending/retrying activities
@@ -283,7 +342,7 @@ Future<void> setupServiceLocator() async {
     ),
   );
 
-  // Playback signal capturer — hooks into engine for play/skip events
+  // Playback signal capturer
   final capturer = PlaybackSignalCapturer(
     engine: engine,
     signals: _sl<SignalRepository>(),
@@ -291,7 +350,7 @@ Future<void> setupServiceLocator() async {
   capturer.start();
   _sl.registerSingleton<PlaybackSignalCapturer>(capturer);
 
-  // Network signal ingester — reads existing ActivityPub activities as signals
+  // Network signal ingester
   _sl.registerSingleton<NetworkSignalIngester>(
     NetworkSignalIngester(
       db: db,
@@ -306,7 +365,6 @@ Future<void> setupServiceLocator() async {
   );
   _sl.registerSingleton<NodeDiscoveryService>(
     NodeDiscoveryService(
-      // Discovery endpoint URL can be set via build environment variable.
       discoveryEndpoint: const String.fromEnvironment(
         'DISCOVERY_ENDPOINT',
         defaultValue: '',
@@ -330,7 +388,6 @@ Future<void> setupServiceLocator() async {
     ),
   );
 
-  // Kick off initial network signal ingestion in the background
   _sl<NetworkSignalIngester>().ingest().ignore();
 
   // Phase 7 — offline activity queue
@@ -341,7 +398,7 @@ Future<void> setupServiceLocator() async {
     ),
   );
 
-  // Register Phase 2 + Phase 3 debug overlay tabs (no-op in release builds)
+  // Register debug overlay tabs
   registerDebugOverlayTabs();
 
   AppLogger.info('Service locator initialized', tag: 'di');

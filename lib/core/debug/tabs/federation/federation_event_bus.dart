@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-enum DeliveryStatus { delivered, retrying, relayed, failed }
+enum DeliveryStatus { delivered, retrying, failed }
 
 class OutgoingActivityEvent {
   const OutgoingActivityEvent({

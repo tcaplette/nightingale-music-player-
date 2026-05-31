@@ -4,6 +4,7 @@ import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/core/federation/actor_resolver.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
 import 'package:nightingale/features/federation/delivery/activity_delivery_service.dart';
+import 'package:nightingale/features/federation/discovery/peer_exchange_service.dart';
 import 'package:nightingale/features/node_identity/node_identity_repository.dart';
 
 const _tag = 'social_subscribing';
@@ -15,15 +16,18 @@ class SocialSubscribingService {
     required ActorResolver actorResolver,
     required ActivityDeliveryService delivery,
     required NodeIdentityRepository identityRepo,
+    required PeerExchangeService peerExchange,
   })  : _db = db,
         _actorResolver = actorResolver,
         _delivery = delivery,
-        _identityRepo = identityRepo;
+        _identityRepo = identityRepo,
+        _peerExchange = peerExchange;
 
   final AppDatabase _db;
   final ActorResolver _actorResolver;
   final ActivityDeliveryService _delivery;
   final NodeIdentityRepository _identityRepo;
+  final PeerExchangeService _peerExchange;
 
   // ── Following ─────────────────────────────────────────────────────────────
 
@@ -70,6 +74,11 @@ class SocialSubscribingService {
       await _delivery.deliver(followActivity, actor.inbox!);
       AppLogger.info('Follow activity delivered to ${actor.inbox}', tag: _tag);
     }
+
+    // Enqueue a peer exchange job so the new contact's social graph is fetched
+    // and cached in the background. This is fire-and-forget — the follow
+    // completes immediately and the UI is not blocked.
+    _peerExchange.enqueue(actorUrl);
   }
 
   /// Unfollows an actor.

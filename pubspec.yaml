@@ -60,6 +60,9 @@ dependencies:
   # Federation — network connectivity monitoring
   connectivity_plus: ^6.1.1
 
+  # Federation — mDNS service advertisement and peer discovery (native NSD/Bonjour)
+  bonsoir: ^5.1.2
+
   # Account portability — QR code display for migration token
   qr_flutter: ^4.1.0
 

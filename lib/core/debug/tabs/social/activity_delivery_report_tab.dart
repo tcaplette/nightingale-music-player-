@@ -95,16 +95,6 @@ class _ActivityDeliveryReportTabState
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
-              if (a.relayReferenceId != null)
-                Text(
-                  'relay: ${a.relayReferenceId}',
-                  style: const TextStyle(
-                    fontSize: 10,
-                    color: AppColors.neutral400,
-                    fontFamily: 'monospace',
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
             ],
           ),
         );
@@ -127,7 +117,6 @@ class _StatusChip extends StatelessWidget {
   Color get _color => switch (status) {
         'delivered' => const Color(0xFF34C759),
         'retrying' => AppColors.warningBanner,
-        'relayed' => AppColors.accentSubdued,
         'failed' => AppColors.errorDark,
         _ => AppColors.neutral400,
       };

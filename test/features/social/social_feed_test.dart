@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/core/repositories/activity_repository.dart';
 import 'package:nightingale/core/repositories/social_repository.dart';
+import 'package:nightingale/features/social/providers/notifications_notifier.dart';
 import 'package:nightingale/features/social/providers/social_feed_notifier.dart';
 import 'package:nightingale/features/social/screens/social_feed_screen_v2.dart';
 import 'package:nightingale/shared/theme/app_theme.dart';
@@ -81,6 +82,10 @@ Widget _wrap(Widget child, SocialFeedState feedState) => ProviderScope(
       overrides: [
         socialFeedProvider.overrideWith(
           (ref) => _StubFeedNotifier(feedState),
+        ),
+        // Prevent NotificationsBadgeButton from calling sl<AppDatabase>()
+        notificationsProvider.overrideWith(
+          (ref) => NotificationsNotifier.stub(),
         ),
       ],
       child: MaterialApp.router(

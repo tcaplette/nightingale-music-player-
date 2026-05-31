@@ -2,12 +2,14 @@ import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:nightingale/core/di/service_locator.dart';
 import 'package:nightingale/core/resilience/activity_queue_service.dart';
 import 'package:nightingale/core/resilience/offline_mode_coordinator.dart';
 import 'package:nightingale/core/router/app_router.dart';
 import 'package:nightingale/features/library/library_lifecycle_watcher.dart';
 import 'package:nightingale/shared/components/error_boundary.dart';
+import 'package:nightingale/features/settings/providers/theme_notifier.dart';
 import 'package:nightingale/shared/theme/app_theme.dart';
 
 class NightingaleApp extends StatelessWidget {
@@ -31,6 +33,7 @@ class _AppBody extends ConsumerStatefulWidget {
 
 class _AppBodyState extends ConsumerState<_AppBody> {
   bool _wasOnline = true;
+  GoRouter? _router;
 
   @override
   void initState() {
@@ -46,15 +49,32 @@ class _AppBodyState extends ConsumerState<_AppBody> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // ProviderScope.containerOf uses dependOnInheritedWidgetOfExactType, which
+    // cannot be called in initState. didChangeDependencies is the correct hook.
+    _router ??= buildRouter(ProviderScope.containerOf(context));
+  }
+
+  @override
+  void dispose() {
+    _router?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     developer.log('APP: _AppBody.build', name: 'nightingale.app');
+    final router = _router;
+    if (router == null) return const SizedBox.shrink();
+    final themeMode = ref.watch(themeNotifierProvider).valueOrNull ?? ThemeMode.system;
     return LibraryLifecycleWatcher(
       child: MaterialApp.router(
         title: 'Nightingale',
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,
-        themeMode: ThemeMode.system,
-        routerConfig: appRouter,
+        themeMode: themeMode,
+        routerConfig: router,
         debugShowCheckedModeBanner: false,
       ),
     );

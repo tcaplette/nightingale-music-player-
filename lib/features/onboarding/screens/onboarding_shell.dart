@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:nightingale/core/di/service_locator.dart';
 import 'package:nightingale/core/router/app_router.dart';
+import 'package:nightingale/features/federation/discovery/mastodon_bridge_service.dart';
+import 'package:nightingale/features/federation/screens/mastodon_import_screen.dart';
 import 'package:nightingale/features/node_identity/node_identity_notifier.dart';
+import 'package:nightingale/features/onboarding/mastodon_account_provider.dart';
 import 'package:nightingale/features/onboarding/onboarding_notifier.dart';
+import 'package:nightingale/features/onboarding/secure_storage_service.dart';
 import 'package:nightingale/shared/components/buttons/app_button.dart';
 import 'package:nightingale/shared/components/inputs/app_text_input.dart';
 import 'package:nightingale/shared/theme/app_motion.dart';
 import 'package:nightingale/shared/theme/app_spacing.dart';
 
-enum _OnboardingStep { welcome, identity, migration, complete }
+enum _OnboardingStep { welcome, identity, mastodon, discovery, complete }
 
 class OnboardingShell extends ConsumerStatefulWidget {
   const OnboardingShell({super.key});
@@ -38,10 +43,14 @@ class _OnboardingShellState extends ConsumerState<OnboardingShell> {
           ),
         _OnboardingStep.identity => _IdentityStep(
             key: const ValueKey('identity'),
-            onNext: () => _advance(_OnboardingStep.migration),
+            onNext: () => _advance(_OnboardingStep.mastodon),
           ),
-        _OnboardingStep.migration => _MigrationStep(
-            key: const ValueKey('migration'),
+        _OnboardingStep.mastodon => _MastodonStep(
+            key: const ValueKey('mastodon'),
+            onNext: () => _advance(_OnboardingStep.discovery),
+          ),
+        _OnboardingStep.discovery => _DiscoveryStep(
+            key: const ValueKey('discovery'),
             onNext: () => _advance(_OnboardingStep.complete),
           ),
         _OnboardingStep.complete => _CompleteStep(
@@ -220,11 +229,46 @@ class _IdentityStepState extends ConsumerState<_IdentityStep> {
   }
 }
 
-// ── Step 3: Migration story ───────────────────────────────────────────────────
+// ── Step 3: Mastodon account ──────────────────────────────────────────────────
 
-class _MigrationStep extends StatelessWidget {
-  const _MigrationStep({super.key, required this.onNext});
+class _MastodonStep extends ConsumerStatefulWidget {
+  const _MastodonStep({super.key, required this.onNext});
   final VoidCallback onNext;
+
+  @override
+  ConsumerState<_MastodonStep> createState() => _MastodonStepState();
+}
+
+class _MastodonStepState extends ConsumerState<_MastodonStep> {
+  final _handleController = TextEditingController();
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _handleController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _continue() async {
+    final handle = _handleController.text.trim();
+    if (handle.isEmpty) {
+      setState(() => _error = 'Enter your Mastodon handle or skip for now.');
+      return;
+    }
+    final validationError = MastodonBridgeService.validateHandle(handle);
+    if (validationError != null) {
+      setState(() => _error = validationError);
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    await sl<SecureStorageService>().setMastodonHandle(handle);
+    ref.invalidate(mastodonAccountProvider);
+    if (mounted) widget.onNext();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -238,14 +282,132 @@ class _MigrationStep extends StatelessWidget {
             children: [
               const Spacer(),
               Text(
-                'Take your music identity with you',
+                'Bring your network with you',
                 style: theme.textTheme.displayLarge,
               ),
-              const SizedBox(height: AppSpacing.md),
+              const SizedBox(height: AppSpacing.sm),
               Text(
-                'If you ever get a new phone, you can carry everything '
-                'with you — your followers, your library, your history. '
-                'Nothing gets left behind.',
+                'Enter your Mastodon handle and we\'ll find which of your connections are already on Nightingale.',
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xl),
+              AppTextInput(
+                label: 'Mastodon handle',
+                hint: '@you@mastodon.social',
+                controller: _handleController,
+                onChanged: (_) {
+                  if (_error != null) setState(() => _error = null);
+                },
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  _error!,
+                  style: TextStyle(
+                    color: theme.colorScheme.error,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+              const SizedBox(height: AppSpacing.lg),
+              SizedBox(
+                width: double.infinity,
+                child: AppButton(
+                  label: _saving ? 'Saving…' : 'Continue',
+                  onPressed: _saving ? null : _continue,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Center(
+                child: TextButton(
+                  onPressed: _saving ? null : widget.onNext,
+                  child: Text(
+                    'Skip for now',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+              const Spacer(flex: 2),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Step 4: Discovery ─────────────────────────────────────────────────────────
+
+class _DiscoveryStep extends ConsumerWidget {
+  const _DiscoveryStep({super.key, required this.onNext});
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final storedHandle = ref.watch(mastodonAccountProvider).valueOrNull;
+    return DiscoveryOnboardingStep(
+      onNext: onNext,
+      initialMastodonHandle: storedHandle,
+    );
+  }
+}
+
+/// The post-identity discovery step — offered once during onboarding and also
+/// accessible any time from the Find People screen.
+///
+/// Extracted as a public widget so it can be unit/widget tested independently.
+class DiscoveryOnboardingStep extends StatefulWidget {
+  const DiscoveryOnboardingStep({
+    super.key,
+    required this.onNext,
+    this.initialMastodonHandle,
+  });
+  final VoidCallback onNext;
+  final String? initialMastodonHandle;
+
+  @override
+  State<DiscoveryOnboardingStep> createState() =>
+      _DiscoveryOnboardingStepState();
+}
+
+class _DiscoveryOnboardingStepState extends State<DiscoveryOnboardingStep> {
+  bool _showMastodonImport = false;
+
+  Future<void> _markShownAndAdvance() async {
+    await sl<SecureStorageService>().setDiscoveryShown(true);
+    widget.onNext();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_showMastodonImport) {
+      return MastodonImportScreen(
+        key: const ValueKey('mastodon_import'),
+        initialHandle: widget.initialMastodonHandle,
+        onDone: _markShownAndAdvance,
+      );
+    }
+
+    final theme = Theme.of(context);
+    return Scaffold(
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Spacer(),
+              Text(
+                'Find your people',
+                style: theme.textTheme.displayLarge,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Connect with friends already on Nightingale or bring your Mastodon network with you.',
                 style: theme.textTheme.bodyLarge?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -253,12 +415,23 @@ class _MigrationStep extends StatelessWidget {
               const Spacer(flex: 2),
               SizedBox(
                 width: double.infinity,
-                child: AppButton(label: 'Back up my identity', onPressed: onNext),
+                child: AppButton(
+                  label: 'Connect Mastodon',
+                  onPressed: () => setState(() => _showMastodonImport = true),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: () => context.push(AppRoutes.findPeople),
+                  child: const Text('Find by username'),
+                ),
               ),
               const SizedBox(height: AppSpacing.md),
               Center(
                 child: TextButton(
-                  onPressed: onNext,
+                  onPressed: _markShownAndAdvance,
                   child: Text(
                     'Skip for now',
                     style: theme.textTheme.labelLarge?.copyWith(
@@ -276,7 +449,7 @@ class _MigrationStep extends StatelessWidget {
   }
 }
 
-// ── Step 4: Completion ────────────────────────────────────────────────────────
+// ── Step 5: Completion ────────────────────────────────────────────────────────
 
 class _CompleteStep extends StatelessWidget {
   const _CompleteStep({super.key, required this.onFinish});

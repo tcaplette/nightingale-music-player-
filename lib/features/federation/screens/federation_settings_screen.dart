@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:nightingale/core/di/service_locator.dart';
+import 'package:nightingale/core/router/app_router.dart';
 import 'package:nightingale/features/federation/publishing/listen_activity_publisher.dart';
 import 'package:nightingale/features/recommendations/data/cold_start_settings_repository.dart';
 import 'package:nightingale/shared/theme/app_spacing.dart';
@@ -97,9 +99,7 @@ class _FederationSettingsScreenState extends State<FederationSettingsScreen> {
               title: const Text('Library Sharing'),
               subtitle: const Text('Control who can see your library'),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.of(context).pushNamed('/sharing-settings');
-              },
+              onTap: () => context.push(AppRoutes.settingsSharing),
             ),
           ]),
         ],

@@ -9,15 +9,10 @@ class NodeIdentityRepositoryImpl implements NodeIdentityRepository {
   NodeIdentityRepositoryImpl({
     required this.db,
     required this.crypto,
-    required this.baseUrl,
   });
 
   final AppDatabase db;
   final CryptoService crypto;
-
-  // The node's publicly routable base URL (e.g. "https://relay.example/nodes/abc123").
-  // Provided by NodeReachabilityService; set at construction time from config.
-  final String baseUrl;
 
   @override
   Future<bool> hasIdentity() async {
@@ -29,11 +24,15 @@ class NodeIdentityRepositoryImpl implements NodeIdentityRepository {
   }
 
   @override
-  Future<void> generateIdentity({required String displayName}) async {
+  Future<void> generateIdentity({
+    required String displayName,
+    required String lanIp,
+    required int port,
+  }) async {
     await crypto.generateKeyPair();
     final publicKeyPem = await crypto.getPublicKeyPem();
     final username = _usernameFromDisplayName(displayName);
-    final actorUrl = '$baseUrl/users/$username';
+    final actorUrl = 'http://$lanIp:$port/users/$username';
 
     await db.into(db.nodeIdentityTable).insert(
           NodeIdentityTableCompanion.insert(
@@ -55,6 +54,21 @@ class NodeIdentityRepositoryImpl implements NodeIdentityRepository {
   Future<String> getActorUrl() async {
     final row = await (db.select(db.nodeIdentityTable)).getSingle();
     return row.actorUrl;
+  }
+
+  @override
+  Future<void> updatePublicAddress(String? publicAddress) async {
+    await (db.update(db.nodeIdentityTable)).write(
+      NodeIdentityTableCompanion(
+        nodePublicAddress: Value(publicAddress),
+      ),
+    );
+  }
+
+  @override
+  Future<String?> getPublicAddress() async {
+    final row = await (db.select(db.nodeIdentityTable)).getSingle();
+    return row.nodePublicAddress;
   }
 
   ApActor _rowToActor(NodeIdentityTableData row) {

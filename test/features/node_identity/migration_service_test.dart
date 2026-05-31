@@ -10,7 +10,6 @@ import 'package:nightingale/core/crypto/platform_crypto_service.dart';
 import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/core/federation/http_signature_service.dart';
 import 'package:nightingale/features/federation/delivery/activity_delivery_service.dart';
-import 'package:nightingale/features/federation/delivery/relay_client.dart';
 import 'package:nightingale/features/federation/moderation/moderation_repository.dart';
 import 'package:nightingale/features/node_identity/migration_service.dart';
 import 'package:nightingale/features/node_identity/node_identity_repository.dart';
@@ -160,7 +159,11 @@ class _FakeIdentityRepo implements NodeIdentityRepository {
   Future<bool> hasIdentity() async => true;
 
   @override
-  Future<void> generateIdentity({required String displayName}) async {}
+  Future<void> generateIdentity({
+    required String displayName,
+    required String lanIp,
+    required int port,
+  }) async {}
 
   @override
   Future<String> getActorUrl() async => actorUrl;
@@ -181,6 +184,12 @@ class _FakeIdentityRepo implements NodeIdentityRepository {
           publicKeyPem: '',
         ),
       );
+
+  @override
+  Future<void> updatePublicAddress(String? publicAddress) async {}
+
+  @override
+  Future<String?> getPublicAddress() async => null;
 }
 
 class _FakeDelivery extends ActivityDeliveryService {
@@ -191,7 +200,6 @@ class _FakeDelivery extends ActivityDeliveryService {
             crypto: crypto,
             keyId: 'https://example.com/users/alice#main-key',
           ),
-          relayClient: RelayClient(relayBaseUrl: ''),
           moderation: ModerationRepository(db: db),
         );
 

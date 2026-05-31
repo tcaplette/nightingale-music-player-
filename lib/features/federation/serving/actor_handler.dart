@@ -13,8 +13,15 @@ Future<Response> actorHandler(Request request, String username) async {
     return Response.notFound('Not found');
   }
 
+  final json = actor.toJson();
+
+  final publicAddress = await repo.getPublicAddress();
+  if (publicAddress != null) {
+    json['x-nightingale-public-address'] = publicAddress;
+  }
+
   return Response.ok(
-    jsonEncode(actor.toJson()),
+    jsonEncode(json),
     headers: {
       HttpHeaders.contentTypeHeader: 'application/activity+json',
     },

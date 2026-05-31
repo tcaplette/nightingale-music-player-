@@ -73,7 +73,6 @@ class _OutgoingActivityLogPanelState extends State<OutgoingActivityLogPanel> {
   String _statusChip(DeliveryStatus s) => switch (s) {
         DeliveryStatus.delivered => '✓ delivered',
         DeliveryStatus.retrying => '↻ retrying',
-        DeliveryStatus.relayed => '⇢ relayed',
         DeliveryStatus.failed => '✗ failed',
       };
 }
