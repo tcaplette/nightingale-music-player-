@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:nightingale/core/di/service_locator.dart';
 import 'package:nightingale/features/federation/publishing/library_publisher.dart';
+import 'package:nightingale/features/library/models/track_model.dart';
+import 'package:nightingale/features/library/widgets/metadata_editor_sheet.dart';
+import 'package:nightingale/features/library/widgets/track_tile.dart';
 import 'package:nightingale/shared/components/sheets/app_bottom_sheet.dart';
 import 'package:nightingale/shared/theme/app_spacing.dart';
 
@@ -15,16 +18,35 @@ class SharingSettingsScreen extends StatefulWidget {
 class _SharingSettingsScreenState extends State<SharingSettingsScreen> {
   final _publisher = sl<LibraryPublisher>();
   SharingScope _scope = SharingScope.private;
+  List<TrackModel> _incompleteTracks = [];
+  bool _loadingIncomplete = false;
 
   @override
   void initState() {
     super.initState();
     _scope = _publisher.sharingScope;
+    if (_scope != SharingScope.private) _loadIncomplete();
   }
 
-  void _setScope(SharingScope scope) {
+  Future<void> _setScope(SharingScope scope) async {
     setState(() => _scope = scope);
     _publisher.setSharingScope(scope);
+    if (scope != SharingScope.private) {
+      await _loadIncomplete();
+    } else {
+      setState(() => _incompleteTracks = []);
+    }
+  }
+
+  Future<void> _loadIncomplete() async {
+    setState(() => _loadingIncomplete = true);
+    final tracks = await _publisher.getIncompleteSharedTracks();
+    if (mounted) {
+      setState(() {
+        _incompleteTracks = tracks;
+        _loadingIncomplete = false;
+      });
+    }
   }
 
   @override
@@ -57,7 +79,126 @@ class _SharingSettingsScreenState extends State<SharingSettingsScreen> {
             _infoRow('Stream URLs (with authentication)'),
             _infoRow('Artwork URLs'),
           ]),
+          if (_scope != SharingScope.private) ...[
+            const Divider(),
+            _incompleteSection(),
+          ],
         ],
+      ),
+    );
+  }
+
+  Widget _incompleteSection() {
+    if (_loadingIncomplete) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_incompleteTracks.isEmpty) {
+      return _section('Metadata Status', [
+        _infoRow('All shared tracks have complete metadata'),
+      ]);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Metadata Status',
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+            letterSpacing: 1.0,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.warning_amber_rounded, color: Color(0xFFFF3B30)),
+          title: Text(
+            '${_incompleteTracks.length} track${_incompleteTracks.length == 1 ? '' : 's'} excluded',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          subtitle: const Text(
+            'Tap to view and fix incomplete metadata',
+            style: TextStyle(fontSize: 12),
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => _showIncompleteTracksList(context),
+        ),
+        const SizedBox(height: AppSpacing.xl),
+      ],
+    );
+  }
+
+  void _showIncompleteTracksList(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        minChildSize: 0.4,
+        expand: false,
+        builder: (ctx, scrollController) => Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md,
+                AppSpacing.sm,
+                AppSpacing.md,
+                0,
+              ),
+              child: Column(
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Theme.of(ctx)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    'Tracks with incomplete metadata',
+                    style: Theme.of(ctx).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    'Long-press any track to edit its metadata.',
+                    style: Theme.of(ctx).textTheme.labelSmall,
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                controller: scrollController,
+                itemCount: _incompleteTracks.length,
+                itemBuilder: (ctx, i) {
+                  final track = _incompleteTracks[i];
+                  return TrackTile(
+                    track: track,
+                    onTap: () {},
+                    onLongPress: () {
+                      showMetadataEditorSheet(ctx, track);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -68,7 +209,9 @@ class _SharingSettingsScreenState extends State<SharingSettingsScreen> {
       children: [
         Text(
           title,
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(letterSpacing: 1.0),
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+            letterSpacing: 1.0,
+          ),
         ),
         const SizedBox(height: AppSpacing.sm),
         ...children,

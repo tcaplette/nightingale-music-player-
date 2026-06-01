@@ -49,6 +49,8 @@
 	</dict>
 	<key>NSAppleMusicUsageDescription</key>
 	<string>Nightingale needs access to your music library to scan and play your songs.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Nightingale needs access to your photo library to set a profile picture.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

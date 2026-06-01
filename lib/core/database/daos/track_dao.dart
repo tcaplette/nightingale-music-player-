@@ -31,7 +31,7 @@ class TrackDao extends DatabaseAccessor<AppDatabase> with _$TrackDaoMixin {
 
   Future<List<TracksTableData>> getTracksByGenre(String genre) =>
       (select(tracksTable)
-            ..where((t) => t.genre.equals(genre))
+            ..where((t) => t.genre.lower().equals(genre.toLowerCase()))
             ..orderBy([(t) => OrderingTerm.asc(t.title)]))
           .get();
 

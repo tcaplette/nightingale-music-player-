@@ -1,13 +1,11 @@
-import 'dart:developer' as developer;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:nightingale/features/library/models/track_model.dart';
 import 'package:nightingale/features/library/providers/library_providers.dart';
+import 'package:nightingale/features/library/widgets/metadata_editor_sheet.dart';
+import 'package:nightingale/features/library/widgets/track_tile.dart';
 import 'package:nightingale/features/playback/providers/playback_providers.dart';
 import 'package:nightingale/shared/components/empty_state_widget.dart';
 import 'package:nightingale/shared/components/skeleton_loader.dart';
-import 'package:nightingale/shared/theme/app_spacing.dart';
 
 class AllSongsView extends ConsumerWidget {
   const AllSongsView({super.key});
@@ -38,64 +36,22 @@ class AllSongsView extends ConsumerWidget {
           onRefresh: () => ref.read(libraryScanProvider.notifier).scan(),
           child: ListView.builder(
             itemCount: tracks.length,
-            itemBuilder: (context, i) => _TrackTile(
-              track: tracks[i],
-              onTap: () {
-                final notifier = ref.read(playbackProvider.notifier);
-                notifier.loadAndPlay(tracks, startIndex: i);
-              },
-            ),
+            itemBuilder: (context, i) {
+              final track = tracks[i];
+              return TrackTile(
+                track: track,
+                onTap: () {
+                  ref.read(playbackProvider.notifier).loadAndPlay(
+                    tracks,
+                    startIndex: i,
+                  );
+                },
+                onLongPress: () => showMetadataEditorSheet(context, track),
+              );
+            },
           ),
         );
       },
     );
-  }
-}
-
-class _TrackTile extends StatelessWidget {
-  const _TrackTile({required this.track, required this.onTap});
-  final TrackModel track;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final scheme = Theme.of(context).colorScheme;
-    final duration = _formatDuration(track.duration);
-    return Semantics(
-      label: '${track.title} by ${track.artist}, $duration',
-      button: true,
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md,
-          vertical: AppSpacing.xs,
-        ),
-        title: Text(
-          track.title,
-          style: textTheme.bodyLarge,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Text(
-          track.artist,
-          style: textTheme.labelMedium,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        trailing: Text(
-          duration,
-          style: textTheme.labelSmall?.copyWith(
-            color: scheme.onSurface.withValues(alpha: 0.5),
-          ),
-        ),
-        onTap: onTap,
-      ),
-    );
-  }
-
-  String _formatDuration(Duration d) {
-    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$m:$s';
   }
 }

@@ -76,14 +76,23 @@ class _MigrationExportScreenState extends State<MigrationExportScreen> {
                   ),
                 ),
               if (_token != null) ...[
-                Center(
-                  child: QrImageView(
-                    data: _token!,
-                    size: 240,
+                if (_token!.length <= 2048) ...[
+                  Center(
+                    child: QrImageView(
+                      data: _token!,
+                      size: 240,
+                    ),
                   ),
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                Text('Or copy the code:', style: AppTypography.labelMd),
+                  const SizedBox(height: AppSpacing.lg),
+                  Text('Or copy the code:', style: AppTypography.labelMd),
+                ] else ...[
+                  Text(
+                    'Your profile photo makes this code too large for a QR — use the copy button instead.',
+                    style: AppTypography.bodySm,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  Text('Copy the code:', style: AppTypography.labelMd),
+                ],
                 const SizedBox(height: AppSpacing.sm),
                 GestureDetector(
                   onTap: () {

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nightingale/core/di/service_locator.dart';
 import 'package:nightingale/features/federation/discovery/mastodon_bridge_service.dart';
+import 'package:nightingale/features/onboarding/mastodon_account_provider.dart';
+import 'package:nightingale/features/onboarding/secure_storage_service.dart';
 import 'package:nightingale/features/social/providers/social_graph_notifier.dart';
 import 'package:nightingale/shared/components/identity/person_display.dart';
 import 'package:nightingale/shared/theme/app_spacing.dart';
@@ -49,6 +51,7 @@ class _MastodonImportScreenState extends ConsumerState<MastodonImportScreen> {
     super.initState();
     if (widget.initialHandle != null) {
       _controller.text = widget.initialHandle!;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _import());
     }
   }
 
@@ -81,6 +84,8 @@ class _MastodonImportScreenState extends ConsumerState<MastodonImportScreen> {
     final matches = await bridge.importSocialGraph(handle);
 
     if (!mounted) return;
+    await sl<SecureStorageService>().setMastodonHandle(handle);
+    ref.invalidate(mastodonAccountProvider);
     setState(() => _state = _ImportDone(matches));
   }
 
@@ -103,6 +108,8 @@ class _MastodonImportScreenState extends ConsumerState<MastodonImportScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final accountAsync = ref.watch(mastodonAccountProvider);
+    final connectedHandle = accountAsync.valueOrNull;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Connect Mastodon'),
@@ -119,6 +126,10 @@ class _MastodonImportScreenState extends ConsumerState<MastodonImportScreen> {
       body: ListView(
         padding: const EdgeInsets.all(AppSpacing.md),
         children: [
+          if (connectedHandle != null) ...[
+            _ConnectionBanner(handle: connectedHandle),
+            const SizedBox(height: AppSpacing.md),
+          ],
           Text(
             'Find your Mastodon connections on Nightingale',
             style: theme.textTheme.titleMedium,
@@ -181,6 +192,44 @@ class _MastodonImportScreenState extends ConsumerState<MastodonImportScreen> {
     }
 
     return const SizedBox.shrink();
+  }
+}
+
+class _ConnectionBanner extends StatelessWidget {
+  const _ConnectionBanner({required this.handle});
+  final String handle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primaryContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.check_circle,
+            size: 18,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              'Connected as $handle',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onPrimaryContainer,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

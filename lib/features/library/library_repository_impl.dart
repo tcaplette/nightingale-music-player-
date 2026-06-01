@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart';
+import 'package:metadata_god/metadata_god.dart';
 import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
 import 'package:nightingale/features/library/library_repository.dart';
@@ -7,6 +10,7 @@ import 'package:nightingale/features/library/models/artist_model.dart' as ng;
 import 'package:nightingale/features/library/models/scan_result.dart';
 import 'package:nightingale/features/library/models/track_model.dart';
 import 'package:on_audio_query/on_audio_query.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 const _tag = 'library';
@@ -99,6 +103,9 @@ class LibraryRepositoryImpl implements LibraryRepository {
         final title = _normalise(song.title) ?? _titleFromPath(path);
         final artist = _normalise(song.artist) ?? 'Unknown Artist';
 
+        final artworkPath = await _saveArtwork(song.id);
+        final isrc = await _readIsrc(path);
+
         await _db.trackDao.insertTrack(
           TracksTableCompanion.insert(
             filePath: path,
@@ -107,9 +114,10 @@ class LibraryRepositoryImpl implements LibraryRepository {
             albumId: Value(albumId),
             albumArtist: Value(_normalise(song.artist)),
             trackNumber: Value(song.track),
-            genre: Value(_normalise(song.genre)),
+            genre: Value(_normaliseGenre(song.genre)),
             durationMs: Value(song.duration ?? 0),
-            artworkPath: const Value(null),
+            artworkPath: Value(artworkPath),
+            isrc: Value(isrc),
           ),
         );
         parsed++;
@@ -145,6 +153,35 @@ class LibraryRepositoryImpl implements LibraryRepository {
     return result;
   }
 
+  /// Extracts and saves album artwork for a song; returns the saved file path or null.
+  Future<String?> _saveArtwork(int songId) async {
+    try {
+      final bytes = await _query.queryArtwork(
+        songId,
+        ArtworkType.AUDIO,
+        format: ArtworkFormat.JPEG,
+        size: 512,
+      );
+      if (bytes == null || bytes.isEmpty) return null;
+      final dir = await getApplicationDocumentsDirectory();
+      final artDir = Directory('${dir.path}/artworks');
+      if (!artDir.existsSync()) artDir.createSync(recursive: true);
+      final file = File('${artDir.path}/$songId.jpg');
+      await file.writeAsBytes(bytes);
+      return file.path;
+    } catch (e) {
+      AppLogger.debug('Artwork extraction failed for song $songId: $e', tag: _tag);
+      return null;
+    }
+  }
+
+  /// Reads the ISRC tag from an audio file. Returns null if absent or unreadable.
+  /// MP3: TSRC frame (ID3v2); FLAC: ISRC= Vorbis comment.
+  /// TODO: populate once metadata_god exposes TSRC/ISRC= frames directly.
+  Future<String?> _readIsrc(String filePath) async {
+    return null;
+  }
+
   Future<int?> _upsertAlbum(SongModel song) async {
     final albumName = _normalise(song.album);
     if (albumName == null) return null;
@@ -168,6 +205,14 @@ class LibraryRepositoryImpl implements LibraryRepository {
     return value.trim();
   }
 
+  /// Normalises genre to consistent title-case so "rock", "Rock", and "ROCK"
+  /// all collapse to "Rock".
+  String? _normaliseGenre(String? value) {
+    final trimmed = _normalise(value);
+    if (trimmed == null) return null;
+    return trimmed[0].toUpperCase() + trimmed.substring(1).toLowerCase();
+  }
+
   String _titleFromPath(String path) {
     final name = path.split('/').last;
     final dot = name.lastIndexOf('.');
@@ -176,17 +221,34 @@ class LibraryRepositoryImpl implements LibraryRepository {
 
   // ── Reads ──────────────────────────────────────────────────────────────────
 
+  Future<List<TrackModel>> _rowsToModels(
+    List<TracksTableData> rows,
+  ) async {
+    final albumIds = rows.map((r) => r.albumId).whereType<int>().toSet();
+    final albumNames = <int, String>{};
+    for (final id in albumIds) {
+      final album = await _db.albumDao.getAlbumById(id);
+      if (album != null) albumNames[id] = album.name;
+    }
+    return rows
+        .map(
+          (r) => TrackModel.fromRow(
+            r,
+            albumName: r.albumId != null ? albumNames[r.albumId] : null,
+          ),
+        )
+        .toList();
+  }
+
   @override
   Future<List<TrackModel>> getAllTracks() async {
     final rows = await _db.trackDao.getAllTracks();
-    return rows.map((r) => TrackModel.fromRow(r)).toList();
+    return _rowsToModels(rows);
   }
 
   @override
   Stream<List<TrackModel>> watchAllTracks() {
-    return _db.trackDao
-        .watchAllTracks()
-        .map((rows) => rows.map((r) => TrackModel.fromRow(r)).toList());
+    return _db.trackDao.watchAllTracks().asyncMap(_rowsToModels);
   }
 
   @override
@@ -261,7 +323,7 @@ class LibraryRepositoryImpl implements LibraryRepository {
   Future<List<String>> getGenres() async {
     final tracks = await _db.trackDao.getAllTracks();
     return tracks
-        .map((t) => t.genre)
+        .map((t) => _normaliseGenre(t.genre))
         .whereType<String>()
         .toSet()
         .toList()

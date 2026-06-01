@@ -10,6 +10,8 @@ const _kAudioFocusKey = 'nightingale_settings_audio_focus';
 const _kNotifyNewFollowersKey = 'nightingale_settings_notify_new_followers';
 const _kNotifyActivityFeedKey = 'nightingale_settings_notify_activity_feed';
 const _kNotificationAutoClearKey = 'nightingale_settings_notification_auto_clear';
+const _kSharingScopeKey = 'nightingale_settings_sharing_scope';
+const _kListenActivityEnabledKey = 'nightingale_settings_listen_activity_enabled';
 
 class SettingsRepository {
   SettingsRepository({FlutterSecureStorage? storage})
@@ -129,6 +131,22 @@ class SettingsRepository {
 
   Future<void> setNotificationAutoClear(NotificationAutoClear value) =>
       _storage.write(key: _kNotificationAutoClearKey, value: value.name);
+
+  // ── Federation ─────────────────────────────────────────────────────────────
+
+  Future<String?> getSharingScopeName() =>
+      _storage.read(key: _kSharingScopeKey);
+
+  Future<void> setSharingScopeName(String name) =>
+      _storage.write(key: _kSharingScopeKey, value: name);
+
+  Future<bool> isListenActivityEnabled() async {
+    final v = await _storage.read(key: _kListenActivityEnabledKey);
+    return v == 'true';
+  }
+
+  Future<void> setListenActivityEnabled(bool enabled) =>
+      _storage.write(key: _kListenActivityEnabledKey, value: enabled.toString());
 }
 
 enum NotificationAutoClear {

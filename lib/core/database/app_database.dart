@@ -76,7 +76,7 @@ class AppDatabase extends _$AppDatabase {
       : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 10;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -129,6 +129,15 @@ class AppDatabase extends _$AppDatabase {
           actorCacheTable,
           actorCacheTable.discoverySource,
         );
+      }
+      if (from < 9) {
+        // Metadata validation: ISRC read-only field for deduplication.
+        await m.addColumn(tracksTable, tracksTable.isrc);
+      }
+      if (from < 10) {
+        // User profile: bio and avatar photo.
+        await m.addColumn(nodeIdentityTable, nodeIdentityTable.summary);
+        await m.addColumn(nodeIdentityTable, nodeIdentityTable.avatarJpeg);
       }
     },
   );

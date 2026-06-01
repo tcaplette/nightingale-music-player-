@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nightingale/core/di/service_locator.dart';
+import 'package:nightingale/features/federation/publishing/library_publisher.dart';
 import 'package:nightingale/features/library/library_repository.dart';
 import 'package:nightingale/features/library/models/album_model.dart';
 import 'package:nightingale/features/library/models/artist_model.dart';
@@ -116,6 +117,13 @@ final genreTracksProvider =
     FutureProvider.family<List<TrackModel>, String>((ref, genre) {
       return sl<LibraryRepository>().getTracksByGenre(genre);
     });
+
+/// True when the user's library is set to public or followers-only sharing.
+/// Used to determine whether to show metadata completeness badges.
+final isSharingActiveProvider = Provider<bool>((ref) {
+  final publisher = sl<LibraryPublisher>();
+  return publisher.sharingScope != SharingScope.private;
+});
 
 // ── Search ─────────────────────────────────────────────────────────────────
 

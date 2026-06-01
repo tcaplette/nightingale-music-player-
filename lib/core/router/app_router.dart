@@ -29,6 +29,7 @@ import 'package:nightingale/features/settings/providers/motion_notifier.dart';
 import 'package:nightingale/features/settings/screens/appearance_settings_screen.dart';
 import 'package:nightingale/features/settings/screens/notification_settings_screen.dart';
 import 'package:nightingale/features/settings/screens/playback_settings_screen.dart';
+import 'package:nightingale/features/settings/screens/profile_settings_screen.dart';
 import 'package:nightingale/features/settings/screens/settings_screen.dart';
 import 'package:nightingale/features/social/screens/blocked_muted_screen.dart';
 import 'package:nightingale/shared/components/navigation/app_bottom_nav.dart';
@@ -62,6 +63,7 @@ abstract final class AppRoutes {
   static const String settingsNotifications = '/settings/notifications';
   static const String settingsFederation = '/settings/federation';
   static const String settingsSharing = '/settings/sharing';
+  static const String settingsProfile = '/settings/profile';
   static const String settingsExportIdentity = '/settings/export-identity';
   static const String settingsBlockedMuted = '/settings/blocked-muted';
 }
@@ -297,6 +299,12 @@ GoRouter buildRouter(ProviderContainer container) {
           name: 'settingsSharing',
           pageBuilder: (ctx, state) =>
               _fadePage(ctx, state, const SharingSettingsScreen()),
+        ),
+        GoRoute(
+          path: 'profile',
+          name: 'settingsProfile',
+          pageBuilder: (ctx, state) =>
+              _fadePage(ctx, state, const ProfileSettingsScreen()),
         ),
         GoRoute(
           path: 'export-identity',

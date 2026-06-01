@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:nightingale/core/activitypub/models/ap_actor.dart';
 
 abstract class NodeIdentityRepository {
@@ -11,4 +13,10 @@ abstract class NodeIdentityRepository {
   Future<String> getActorUrl();
   Future<void> updatePublicAddress(String? publicAddress);
   Future<String?> getPublicAddress();
+  Future<void> updateProfile({
+    required String displayName,
+    String? summary,
+    Uint8List? avatarBytes,
+  });
+  Future<Uint8List?> getAvatarBytes();
 }

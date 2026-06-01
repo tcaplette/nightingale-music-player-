@@ -3,6 +3,7 @@ import 'package:shelf_router/shelf_router.dart';
 // Handler imports — added as each handler is implemented.
 import 'package:nightingale/features/federation/serving/webfinger_handler.dart';
 import 'package:nightingale/features/federation/serving/actor_handler.dart';
+import 'package:nightingale/features/federation/serving/avatar_handler.dart';
 import 'package:nightingale/features/federation/serving/inbox_handler.dart';
 import 'package:nightingale/features/federation/serving/outbox_handler.dart';
 import 'package:nightingale/features/federation/serving/followers_handler.dart';
@@ -16,6 +17,7 @@ Router buildFederationRouter() {
 
   router.get('/.well-known/webfinger', webFingerHandler);
   router.get('/users/<username>', actorHandler);
+  router.get('/users/<username>/avatar', avatarHandler);
   router.get('/users/<username>/library', libraryHandler);
   // Phase 5 — playlist endpoint
   router.get('/users/<username>/playlists/<playlistId>', playlistHandler);

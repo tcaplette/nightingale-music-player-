@@ -17,5 +17,6 @@ class TracksTable extends Table {
   IntColumn get releaseYear => integer().nullable()();
   IntColumn get durationMs => integer().withDefault(const Constant(0))();
   TextColumn get artworkPath => text().nullable()();
+  TextColumn get isrc => text().nullable()();
   DateTimeColumn get dateAdded => dateTime().withDefault(currentDateAndTime)();
 }

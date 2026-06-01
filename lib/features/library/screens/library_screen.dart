@@ -11,7 +11,6 @@ import 'package:nightingale/features/library/screens/all_songs_view.dart';
 import 'package:nightingale/features/library/screens/albums_view.dart';
 import 'package:nightingale/features/library/screens/artists_view.dart';
 import 'package:nightingale/features/library/screens/genres_view.dart';
-import 'package:nightingale/shared/components/network_state/partial_library_widget.dart';
 import 'package:nightingale/shared/theme/app_spacing.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
@@ -57,7 +56,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   Widget build(BuildContext context) {
     developer.log('LIBRARY: build', name: 'nightingale.ui');
     final scanState = ref.watch(libraryScanProvider);
-    final isStale = scanState.isMediaStorePotentiallyStale;
     final isScanning = scanState.status == LibraryScanStatus.scanning;
 
     return Scaffold(
@@ -104,17 +102,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       ),
       body: Column(
         children: [
-          if (isStale)
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.md,
-                vertical: AppSpacing.sm,
-              ),
-              child: const PartialLibraryWidget(
-                displayName: 'Your',
-                statusLabel: 'Library may be incomplete',
-              ),
-            ),
           Expanded(
             child: TabBarView(
               controller: _tabs,

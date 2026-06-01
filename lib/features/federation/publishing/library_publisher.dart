@@ -3,9 +3,11 @@ import 'package:nightingale/core/activitypub/models/ap_collection.dart';
 import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/core/di/service_locator.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
+import 'package:nightingale/features/federation/guards/metadata_gate.dart';
 import 'package:nightingale/features/library/library_repository.dart';
 import 'package:nightingale/features/library/models/track_model.dart';
 import 'package:nightingale/features/node_identity/node_identity_repository.dart';
+import 'package:nightingale/features/settings/data/settings_repository.dart';
 
 const _tag = 'library_publisher';
 
@@ -17,21 +19,36 @@ class LibraryPublisher {
     required LibraryRepository libraryRepo,
     required NodeIdentityRepository identityRepo,
     required AppDatabase db,
+    required SettingsRepository settings,
   })  : _libraryRepo = libraryRepo,
         _identityRepo = identityRepo,
-        _db = db;
+        _db = db,
+        _settings = settings;
 
   final LibraryRepository _libraryRepo;
   final NodeIdentityRepository _identityRepo;
   final AppDatabase _db;
+  final SettingsRepository _settings;
+  final _gate = const MetadataGate();
 
   /// Current sharing scope. Defaults to private (opt-in).
   SharingScope _sharingScope = SharingScope.private;
 
   SharingScope get sharingScope => _sharingScope;
 
+  Future<void> init() async {
+    final raw = await _settings.getSharingScopeName();
+    if (raw != null) {
+      _sharingScope = SharingScope.values.firstWhere(
+        (e) => e.name == raw,
+        orElse: () => SharingScope.private,
+      );
+    }
+  }
+
   void setSharingScope(SharingScope scope) {
     _sharingScope = scope;
+    _settings.setSharingScopeName(scope.name).ignore();
     AppLogger.info('Library sharing scope set to $scope', tag: _tag);
   }
 
@@ -54,12 +71,13 @@ class LibraryPublisher {
       }
     }
 
-    final tracks = await _libraryRepo.getAllTracks();
+    final allTracks = await _libraryRepo.getAllTracks();
+    final eligible = allTracks.where(_gate.passes).toList();
     final actorUrl = await _identityRepo.getActorUrl();
 
     return ApOrderedCollection(
       id: '$actorUrl/library',
-      totalItems: tracks.length,
+      totalItems: eligible.length,
       first: '$actorUrl/library?page=1',
     );
   }
@@ -78,8 +96,9 @@ class LibraryPublisher {
     }
 
     final allTracks = await _libraryRepo.getAllTracks();
+    final eligible = allTracks.where(_gate.passes).toList();
     final start = (page - 1) * pageSize;
-    if (start >= allTracks.length) {
+    if (start >= eligible.length) {
       return ApOrderedCollectionPage(
         id: '${await _identityRepo.getActorUrl()}/library?page=$page',
         partOf: '${await _identityRepo.getActorUrl()}/library',
@@ -87,8 +106,8 @@ class LibraryPublisher {
       );
     }
 
-    final end = (start + pageSize).clamp(0, allTracks.length);
-    final pageTracks = allTracks.sublist(start, end);
+    final end = (start + pageSize).clamp(0, eligible.length);
+    final pageTracks = eligible.sublist(start, end);
     final actorUrl = await _identityRepo.getActorUrl();
 
     final audioObjects = pageTracks.map((t) => _trackToAudio(t, actorUrl)).toList();
@@ -97,8 +116,15 @@ class LibraryPublisher {
       id: '$actorUrl/library?page=$page',
       partOf: '$actorUrl/library',
       orderedItems: audioObjects.map((a) => a.toJson()).toList(),
-      next: end < allTracks.length ? '$actorUrl/library?page=${page + 1}' : null,
+      next: end < eligible.length ? '$actorUrl/library?page=${page + 1}' : null,
     );
+  }
+
+  /// Returns all local tracks that fail metadata validation.
+  Future<List<TrackModel>> getIncompleteSharedTracks() async {
+    if (_sharingScope == SharingScope.private) return [];
+    final allTracks = await _libraryRepo.getAllTracks();
+    return allTracks.where((t) => !t.isRemote && !_gate.passes(t)).toList();
   }
 
   ApAudio _trackToAudio(TrackModel track, String actorUrl) {

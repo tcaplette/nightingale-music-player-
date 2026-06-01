@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:nightingale/core/database/app_database.dart';
 
 class TrackModel {
@@ -20,6 +21,8 @@ class TrackModel {
     this.sourceActorUrl,
     this.streamUrl,
     this.isReachable = true,
+    // Read-only from file tags; never user-entered
+    this.isrc,
   });
 
   final int id;
@@ -42,6 +45,9 @@ class TrackModel {
   final String? streamUrl; // remote stream URL
   final bool isReachable; // false = host offline
 
+  // Metadata: read-only from TSRC (ID3v2) / ISRC= (Vorbis); never user-entered
+  final String? isrc;
+
   Duration get duration => Duration(milliseconds: durationMs);
 
   bool get isRemote => sourceActorUrl != null;
@@ -62,6 +68,25 @@ class TrackModel {
       durationMs: row.durationMs,
       artworkPath: row.artworkPath,
       dateAdded: row.dateAdded,
+      isrc: row.isrc,
+    );
+  }
+
+  TracksTableCompanion toUpdateCompanion() {
+    return TracksTableCompanion(
+      id: Value(id),
+      filePath: Value(filePath),
+      title: Value(title),
+      artist: Value(artist),
+      albumId: Value(albumId),
+      albumArtist: Value(albumArtist),
+      trackNumber: Value(trackNumber),
+      discNumber: Value(discNumber),
+      genre: Value(genre),
+      releaseYear: Value(releaseYear),
+      durationMs: Value(durationMs),
+      artworkPath: Value(artworkPath),
+      isrc: Value(isrc),
     );
   }
 

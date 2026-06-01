@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nightingale/core/router/app_router.dart';
+import 'package:nightingale/features/federation/screens/mastodon_import_screen.dart';
+import 'package:nightingale/features/onboarding/mastodon_account_provider.dart';
 import 'package:nightingale/features/onboarding/onboarding_notifier.dart';
 import 'package:nightingale/shared/theme/app_spacing.dart';
 
@@ -10,6 +12,7 @@ class SettingsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final mastodonHandle = ref.watch(mastodonAccountProvider).valueOrNull;
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: ListView(
@@ -47,6 +50,17 @@ class SettingsScreen extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push(AppRoutes.settingsFederation),
           ),
+          ListTile(
+            leading: const Icon(Icons.link),
+            title: const Text('Mastodon account'),
+            subtitle: Text(mastodonHandle ?? 'Not connected'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) => const MastodonImportScreen(),
+              ),
+            ),
+          ),
 
           // ── Notifications ──────────────────────────────────────────────────
           const Divider(height: AppSpacing.xl),
@@ -73,6 +87,13 @@ class SettingsScreen extends ConsumerWidget {
           // ── Account ────────────────────────────────────────────────────────
           const Divider(height: AppSpacing.xl),
           _SectionHeader('Account'),
+          ListTile(
+            leading: const Icon(Icons.person_outline),
+            title: const Text('Profile'),
+            subtitle: const Text('Name, photo, and bio'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push(AppRoutes.settingsProfile),
+          ),
           ListTile(
             leading: const Icon(Icons.qr_code),
             title: const Text('Export identity'),

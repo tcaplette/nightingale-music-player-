@@ -10,6 +10,7 @@ import 'package:nightingale/features/federation/delivery/activity_delivery_servi
 import 'package:nightingale/features/federation/social/social_subscribing_service.dart';
 import 'package:nightingale/features/library/models/track_model.dart';
 import 'package:nightingale/features/node_identity/node_identity_repository.dart';
+import 'package:nightingale/features/settings/data/settings_repository.dart';
 
 const _tag = 'listen_activity';
 
@@ -19,20 +20,28 @@ class ListenActivityPublisher {
     required NodeIdentityRepository identityRepo,
     required ActivityDeliveryService delivery,
     required SocialSubscribingService social,
+    required SettingsRepository settings,
   })  : _identityRepo = identityRepo,
         _delivery = delivery,
-        _social = social;
+        _social = social,
+        _settings = settings;
 
   final NodeIdentityRepository _identityRepo;
   final ActivityDeliveryService _delivery;
   final SocialSubscribingService _social;
+  final SettingsRepository _settings;
 
   bool _enabled = false;
 
   bool get isEnabled => _enabled;
 
+  Future<void> init() async {
+    _enabled = await _settings.isListenActivityEnabled();
+  }
+
   void setEnabled(bool value) {
     _enabled = value;
+    _settings.setListenActivityEnabled(value).ignore();
     AppLogger.info('Listen activity publishing ${value ? 'enabled' : 'disabled'}', tag: _tag);
   }
 

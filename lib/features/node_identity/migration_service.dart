@@ -48,9 +48,18 @@ class MigrationService {
   /// Exports a signed migration token (base64-encoded JSON payload + signature).
   Future<MigrationTokenResult> exportToken() async {
     try {
-      final actorUrl = await identityRepo.getActorUrl();
+      final actor = await identityRepo.getLocalActor();
+      final avatarBytes = await identityRepo.getAvatarBytes();
       final issuedAt = DateTime.now().toUtc().millisecondsSinceEpoch;
-      final payload = jsonEncode({'actorUrl': actorUrl, 'issuedAt': issuedAt});
+      final payloadMap = <String, dynamic>{
+        'actorUrl': actor.id,
+        'displayName': actor.name,
+        'preferredUsername': actor.preferredUsername,
+        'issuedAt': issuedAt,
+        if (actor.summary != null) 'summary': actor.summary,
+        if (avatarBytes != null) 'avatarJpeg': base64.encode(avatarBytes),
+      };
+      final payload = jsonEncode(payloadMap);
       final sigBytes = await crypto.sign(utf8.encode(payload));
       final token = base64Url.encode(
         utf8.encode(jsonEncode({
@@ -58,7 +67,7 @@ class MigrationService {
           'signature': base64.encode(sigBytes),
         })),
       );
-      AppLogger.info('Migration token exported for $actorUrl', tag: 'migration');
+      AppLogger.info('Migration token exported for ${actor.id}', tag: 'migration');
       return MigrationTokenOk(token);
     } catch (e) {
       return MigrationTokenError('Failed to export token: $e');
@@ -104,6 +113,20 @@ class MigrationService {
         .getSingleOrNull();
     if (existing != null && existing.usedAt != null) {
       return MoveError('Token already used');
+    }
+
+    // Restore profile fields from the token (graceful degradation for old tokens).
+    final displayName = payloadJson['displayName'] as String?;
+    final summary = payloadJson['summary'] as String?;
+    final avatarJpegB64 = payloadJson['avatarJpeg'] as String?;
+    if (displayName != null) {
+      final avatarBytes =
+          avatarJpegB64 != null ? base64.decode(avatarJpegB64) : null;
+      await identityRepo.updateProfile(
+        displayName: displayName,
+        summary: summary,
+        avatarBytes: avatarBytes,
+      );
     }
 
     // Broadcast Move activity to each follower

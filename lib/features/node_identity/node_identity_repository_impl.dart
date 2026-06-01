@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:drift/drift.dart';
 import 'package:nightingale/core/activitypub/models/ap_actor.dart';
 import 'package:nightingale/core/activitypub/models/ap_public_key.dart';
@@ -71,6 +73,27 @@ class NodeIdentityRepositoryImpl implements NodeIdentityRepository {
     return row.nodePublicAddress;
   }
 
+  @override
+  Future<void> updateProfile({
+    required String displayName,
+    String? summary,
+    Uint8List? avatarBytes,
+  }) async {
+    await (db.update(db.nodeIdentityTable)).write(
+      NodeIdentityTableCompanion(
+        displayName: Value(displayName),
+        summary: Value(summary),
+        avatarJpeg: Value(avatarBytes),
+      ),
+    );
+  }
+
+  @override
+  Future<Uint8List?> getAvatarBytes() async {
+    final row = await (db.select(db.nodeIdentityTable)).getSingle();
+    return row.avatarJpeg;
+  }
+
   ApActor _rowToActor(NodeIdentityTableData row) {
     final url = row.actorUrl;
     return ApActor(
@@ -87,6 +110,8 @@ class NodeIdentityRepositoryImpl implements NodeIdentityRepository {
         owner: url,
         publicKeyPem: row.publicKeyPem,
       ),
+      summary: row.summary,
+      icon: row.avatarJpeg != null ? '$url/avatar' : null,
     );
   }
 

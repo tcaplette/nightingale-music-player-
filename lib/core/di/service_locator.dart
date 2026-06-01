@@ -199,13 +199,14 @@ Future<void> setupServiceLocator() async {
   // ── Phase 4: Library Federation ──────────────────────────────────────────
 
   // Library publisher
-  _sl.registerSingleton<LibraryPublisher>(
-    LibraryPublisher(
-      libraryRepo: _sl<LibraryRepository>(),
-      identityRepo: _sl<NodeIdentityRepository>(),
-      db: db,
-    ),
+  final libraryPublisher = LibraryPublisher(
+    libraryRepo: _sl<LibraryRepository>(),
+    identityRepo: _sl<NodeIdentityRepository>(),
+    db: db,
+    settings: settingsRepo,
   );
+  await libraryPublisher.init();
+  _sl.registerSingleton<LibraryPublisher>(libraryPublisher);
 
   // Peer exchange — background actor cache expansion on follow
   _sl.registerSingleton<PeerExchangeService>(
@@ -275,13 +276,14 @@ Future<void> setupServiceLocator() async {
   );
 
   // Listen activity publisher
-  _sl.registerSingleton<ListenActivityPublisher>(
-    ListenActivityPublisher(
-      identityRepo: _sl<NodeIdentityRepository>(),
-      delivery: _sl<ActivityDeliveryService>(),
-      social: _sl<SocialSubscribingService>(),
-    ),
+  final listenPublisher = ListenActivityPublisher(
+    identityRepo: _sl<NodeIdentityRepository>(),
+    delivery: _sl<ActivityDeliveryService>(),
+    social: _sl<SocialSubscribingService>(),
+    settings: settingsRepo,
   );
+  await listenPublisher.init();
+  _sl.registerSingleton<ListenActivityPublisher>(listenPublisher);
 
   // Embedded federation HTTP server
   developer.log('DI: creating FederationServer...', name: 'nightingale.di');

@@ -549,6 +549,15 @@ class $TracksTableTable extends TracksTable
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _isrcMeta = const VerificationMeta('isrc');
+  @override
+  late final GeneratedColumn<String> isrc = GeneratedColumn<String>(
+    'isrc',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _dateAddedMeta = const VerificationMeta(
     'dateAdded',
   );
@@ -575,6 +584,7 @@ class $TracksTableTable extends TracksTable
     releaseYear,
     durationMs,
     artworkPath,
+    isrc,
     dateAdded,
   ];
   @override
@@ -674,6 +684,12 @@ class $TracksTableTable extends TracksTable
         ),
       );
     }
+    if (data.containsKey('isrc')) {
+      context.handle(
+        _isrcMeta,
+        isrc.isAcceptableOrUnknown(data['isrc']!, _isrcMeta),
+      );
+    }
     if (data.containsKey('date_added')) {
       context.handle(
         _dateAddedMeta,
@@ -737,6 +753,10 @@ class $TracksTableTable extends TracksTable
         DriftSqlType.string,
         data['${effectivePrefix}artwork_path'],
       ),
+      isrc: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}isrc'],
+      ),
       dateAdded: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}date_added'],
@@ -763,6 +783,7 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
   final int? releaseYear;
   final int durationMs;
   final String? artworkPath;
+  final String? isrc;
   final DateTime dateAdded;
   const TracksTableData({
     required this.id,
@@ -777,6 +798,7 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
     this.releaseYear,
     required this.durationMs,
     this.artworkPath,
+    this.isrc,
     required this.dateAdded,
   });
   @override
@@ -807,6 +829,9 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
     map['duration_ms'] = Variable<int>(durationMs);
     if (!nullToAbsent || artworkPath != null) {
       map['artwork_path'] = Variable<String>(artworkPath);
+    }
+    if (!nullToAbsent || isrc != null) {
+      map['isrc'] = Variable<String>(isrc);
     }
     map['date_added'] = Variable<DateTime>(dateAdded);
     return map;
@@ -840,6 +865,7 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
       artworkPath: artworkPath == null && nullToAbsent
           ? const Value.absent()
           : Value(artworkPath),
+      isrc: isrc == null && nullToAbsent ? const Value.absent() : Value(isrc),
       dateAdded: Value(dateAdded),
     );
   }
@@ -862,6 +888,7 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
       releaseYear: serializer.fromJson<int?>(json['releaseYear']),
       durationMs: serializer.fromJson<int>(json['durationMs']),
       artworkPath: serializer.fromJson<String?>(json['artworkPath']),
+      isrc: serializer.fromJson<String?>(json['isrc']),
       dateAdded: serializer.fromJson<DateTime>(json['dateAdded']),
     );
   }
@@ -881,6 +908,7 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
       'releaseYear': serializer.toJson<int?>(releaseYear),
       'durationMs': serializer.toJson<int>(durationMs),
       'artworkPath': serializer.toJson<String?>(artworkPath),
+      'isrc': serializer.toJson<String?>(isrc),
       'dateAdded': serializer.toJson<DateTime>(dateAdded),
     };
   }
@@ -898,6 +926,7 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
     Value<int?> releaseYear = const Value.absent(),
     int? durationMs,
     Value<String?> artworkPath = const Value.absent(),
+    Value<String?> isrc = const Value.absent(),
     DateTime? dateAdded,
   }) => TracksTableData(
     id: id ?? this.id,
@@ -912,6 +941,7 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
     releaseYear: releaseYear.present ? releaseYear.value : this.releaseYear,
     durationMs: durationMs ?? this.durationMs,
     artworkPath: artworkPath.present ? artworkPath.value : this.artworkPath,
+    isrc: isrc.present ? isrc.value : this.isrc,
     dateAdded: dateAdded ?? this.dateAdded,
   );
   TracksTableData copyWithCompanion(TracksTableCompanion data) {
@@ -940,6 +970,7 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
       artworkPath: data.artworkPath.present
           ? data.artworkPath.value
           : this.artworkPath,
+      isrc: data.isrc.present ? data.isrc.value : this.isrc,
       dateAdded: data.dateAdded.present ? data.dateAdded.value : this.dateAdded,
     );
   }
@@ -959,6 +990,7 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
           ..write('releaseYear: $releaseYear, ')
           ..write('durationMs: $durationMs, ')
           ..write('artworkPath: $artworkPath, ')
+          ..write('isrc: $isrc, ')
           ..write('dateAdded: $dateAdded')
           ..write(')'))
         .toString();
@@ -978,6 +1010,7 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
     releaseYear,
     durationMs,
     artworkPath,
+    isrc,
     dateAdded,
   );
   @override
@@ -996,6 +1029,7 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
           other.releaseYear == this.releaseYear &&
           other.durationMs == this.durationMs &&
           other.artworkPath == this.artworkPath &&
+          other.isrc == this.isrc &&
           other.dateAdded == this.dateAdded);
 }
 
@@ -1012,6 +1046,7 @@ class TracksTableCompanion extends UpdateCompanion<TracksTableData> {
   final Value<int?> releaseYear;
   final Value<int> durationMs;
   final Value<String?> artworkPath;
+  final Value<String?> isrc;
   final Value<DateTime> dateAdded;
   const TracksTableCompanion({
     this.id = const Value.absent(),
@@ -1026,6 +1061,7 @@ class TracksTableCompanion extends UpdateCompanion<TracksTableData> {
     this.releaseYear = const Value.absent(),
     this.durationMs = const Value.absent(),
     this.artworkPath = const Value.absent(),
+    this.isrc = const Value.absent(),
     this.dateAdded = const Value.absent(),
   });
   TracksTableCompanion.insert({
@@ -1041,6 +1077,7 @@ class TracksTableCompanion extends UpdateCompanion<TracksTableData> {
     this.releaseYear = const Value.absent(),
     this.durationMs = const Value.absent(),
     this.artworkPath = const Value.absent(),
+    this.isrc = const Value.absent(),
     this.dateAdded = const Value.absent(),
   }) : filePath = Value(filePath),
        title = Value(title);
@@ -1057,6 +1094,7 @@ class TracksTableCompanion extends UpdateCompanion<TracksTableData> {
     Expression<int>? releaseYear,
     Expression<int>? durationMs,
     Expression<String>? artworkPath,
+    Expression<String>? isrc,
     Expression<DateTime>? dateAdded,
   }) {
     return RawValuesInsertable({
@@ -1072,6 +1110,7 @@ class TracksTableCompanion extends UpdateCompanion<TracksTableData> {
       if (releaseYear != null) 'release_year': releaseYear,
       if (durationMs != null) 'duration_ms': durationMs,
       if (artworkPath != null) 'artwork_path': artworkPath,
+      if (isrc != null) 'isrc': isrc,
       if (dateAdded != null) 'date_added': dateAdded,
     });
   }
@@ -1089,6 +1128,7 @@ class TracksTableCompanion extends UpdateCompanion<TracksTableData> {
     Value<int?>? releaseYear,
     Value<int>? durationMs,
     Value<String?>? artworkPath,
+    Value<String?>? isrc,
     Value<DateTime>? dateAdded,
   }) {
     return TracksTableCompanion(
@@ -1104,6 +1144,7 @@ class TracksTableCompanion extends UpdateCompanion<TracksTableData> {
       releaseYear: releaseYear ?? this.releaseYear,
       durationMs: durationMs ?? this.durationMs,
       artworkPath: artworkPath ?? this.artworkPath,
+      isrc: isrc ?? this.isrc,
       dateAdded: dateAdded ?? this.dateAdded,
     );
   }
@@ -1147,6 +1188,9 @@ class TracksTableCompanion extends UpdateCompanion<TracksTableData> {
     if (artworkPath.present) {
       map['artwork_path'] = Variable<String>(artworkPath.value);
     }
+    if (isrc.present) {
+      map['isrc'] = Variable<String>(isrc.value);
+    }
     if (dateAdded.present) {
       map['date_added'] = Variable<DateTime>(dateAdded.value);
     }
@@ -1168,6 +1212,7 @@ class TracksTableCompanion extends UpdateCompanion<TracksTableData> {
           ..write('releaseYear: $releaseYear, ')
           ..write('durationMs: $durationMs, ')
           ..write('artworkPath: $artworkPath, ')
+          ..write('isrc: $isrc, ')
           ..write('dateAdded: $dateAdded')
           ..write(')'))
         .toString();
@@ -1453,6 +1498,28 @@ class $NodeIdentityTableTable extends NodeIdentityTable
         type: DriftSqlType.string,
         requiredDuringInsert: false,
       );
+  static const VerificationMeta _summaryMeta = const VerificationMeta(
+    'summary',
+  );
+  @override
+  late final GeneratedColumn<String> summary = GeneratedColumn<String>(
+    'summary',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _avatarJpegMeta = const VerificationMeta(
+    'avatarJpeg',
+  );
+  @override
+  late final GeneratedColumn<Uint8List> avatarJpeg = GeneratedColumn<Uint8List>(
+    'avatar_jpeg',
+    aliasedName,
+    true,
+    type: DriftSqlType.blob,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -1462,6 +1529,8 @@ class $NodeIdentityTableTable extends NodeIdentityTable
     displayName,
     createdAt,
     nodePublicAddress,
+    summary,
+    avatarJpeg,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1534,6 +1603,18 @@ class $NodeIdentityTableTable extends NodeIdentityTable
         ),
       );
     }
+    if (data.containsKey('summary')) {
+      context.handle(
+        _summaryMeta,
+        summary.isAcceptableOrUnknown(data['summary']!, _summaryMeta),
+      );
+    }
+    if (data.containsKey('avatar_jpeg')) {
+      context.handle(
+        _avatarJpegMeta,
+        avatarJpeg.isAcceptableOrUnknown(data['avatar_jpeg']!, _avatarJpegMeta),
+      );
+    }
     return context;
   }
 
@@ -1571,6 +1652,14 @@ class $NodeIdentityTableTable extends NodeIdentityTable
         DriftSqlType.string,
         data['${effectivePrefix}node_public_address'],
       ),
+      summary: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}summary'],
+      ),
+      avatarJpeg: attachedDatabase.typeMapping.read(
+        DriftSqlType.blob,
+        data['${effectivePrefix}avatar_jpeg'],
+      ),
     );
   }
 
@@ -1589,6 +1678,8 @@ class NodeIdentityTableData extends DataClass
   final String displayName;
   final DateTime createdAt;
   final String? nodePublicAddress;
+  final String? summary;
+  final Uint8List? avatarJpeg;
   const NodeIdentityTableData({
     required this.id,
     required this.actorUrl,
@@ -1597,6 +1688,8 @@ class NodeIdentityTableData extends DataClass
     required this.displayName,
     required this.createdAt,
     this.nodePublicAddress,
+    this.summary,
+    this.avatarJpeg,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1609,6 +1702,12 @@ class NodeIdentityTableData extends DataClass
     map['created_at'] = Variable<DateTime>(createdAt);
     if (!nullToAbsent || nodePublicAddress != null) {
       map['node_public_address'] = Variable<String>(nodePublicAddress);
+    }
+    if (!nullToAbsent || summary != null) {
+      map['summary'] = Variable<String>(summary);
+    }
+    if (!nullToAbsent || avatarJpeg != null) {
+      map['avatar_jpeg'] = Variable<Uint8List>(avatarJpeg);
     }
     return map;
   }
@@ -1624,6 +1723,12 @@ class NodeIdentityTableData extends DataClass
       nodePublicAddress: nodePublicAddress == null && nullToAbsent
           ? const Value.absent()
           : Value(nodePublicAddress),
+      summary: summary == null && nullToAbsent
+          ? const Value.absent()
+          : Value(summary),
+      avatarJpeg: avatarJpeg == null && nullToAbsent
+          ? const Value.absent()
+          : Value(avatarJpeg),
     );
   }
 
@@ -1642,6 +1747,8 @@ class NodeIdentityTableData extends DataClass
       nodePublicAddress: serializer.fromJson<String?>(
         json['nodePublicAddress'],
       ),
+      summary: serializer.fromJson<String?>(json['summary']),
+      avatarJpeg: serializer.fromJson<Uint8List?>(json['avatarJpeg']),
     );
   }
   @override
@@ -1655,6 +1762,8 @@ class NodeIdentityTableData extends DataClass
       'displayName': serializer.toJson<String>(displayName),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'nodePublicAddress': serializer.toJson<String?>(nodePublicAddress),
+      'summary': serializer.toJson<String?>(summary),
+      'avatarJpeg': serializer.toJson<Uint8List?>(avatarJpeg),
     };
   }
 
@@ -1666,6 +1775,8 @@ class NodeIdentityTableData extends DataClass
     String? displayName,
     DateTime? createdAt,
     Value<String?> nodePublicAddress = const Value.absent(),
+    Value<String?> summary = const Value.absent(),
+    Value<Uint8List?> avatarJpeg = const Value.absent(),
   }) => NodeIdentityTableData(
     id: id ?? this.id,
     actorUrl: actorUrl ?? this.actorUrl,
@@ -1676,6 +1787,8 @@ class NodeIdentityTableData extends DataClass
     nodePublicAddress: nodePublicAddress.present
         ? nodePublicAddress.value
         : this.nodePublicAddress,
+    summary: summary.present ? summary.value : this.summary,
+    avatarJpeg: avatarJpeg.present ? avatarJpeg.value : this.avatarJpeg,
   );
   NodeIdentityTableData copyWithCompanion(NodeIdentityTableCompanion data) {
     return NodeIdentityTableData(
@@ -1694,6 +1807,10 @@ class NodeIdentityTableData extends DataClass
       nodePublicAddress: data.nodePublicAddress.present
           ? data.nodePublicAddress.value
           : this.nodePublicAddress,
+      summary: data.summary.present ? data.summary.value : this.summary,
+      avatarJpeg: data.avatarJpeg.present
+          ? data.avatarJpeg.value
+          : this.avatarJpeg,
     );
   }
 
@@ -1706,7 +1823,9 @@ class NodeIdentityTableData extends DataClass
           ..write('preferredUsername: $preferredUsername, ')
           ..write('displayName: $displayName, ')
           ..write('createdAt: $createdAt, ')
-          ..write('nodePublicAddress: $nodePublicAddress')
+          ..write('nodePublicAddress: $nodePublicAddress, ')
+          ..write('summary: $summary, ')
+          ..write('avatarJpeg: $avatarJpeg')
           ..write(')'))
         .toString();
   }
@@ -1720,6 +1839,8 @@ class NodeIdentityTableData extends DataClass
     displayName,
     createdAt,
     nodePublicAddress,
+    summary,
+    $driftBlobEquality.hash(avatarJpeg),
   );
   @override
   bool operator ==(Object other) =>
@@ -1731,7 +1852,9 @@ class NodeIdentityTableData extends DataClass
           other.preferredUsername == this.preferredUsername &&
           other.displayName == this.displayName &&
           other.createdAt == this.createdAt &&
-          other.nodePublicAddress == this.nodePublicAddress);
+          other.nodePublicAddress == this.nodePublicAddress &&
+          other.summary == this.summary &&
+          $driftBlobEquality.equals(other.avatarJpeg, this.avatarJpeg));
 }
 
 class NodeIdentityTableCompanion
@@ -1743,6 +1866,8 @@ class NodeIdentityTableCompanion
   final Value<String> displayName;
   final Value<DateTime> createdAt;
   final Value<String?> nodePublicAddress;
+  final Value<String?> summary;
+  final Value<Uint8List?> avatarJpeg;
   const NodeIdentityTableCompanion({
     this.id = const Value.absent(),
     this.actorUrl = const Value.absent(),
@@ -1751,6 +1876,8 @@ class NodeIdentityTableCompanion
     this.displayName = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.nodePublicAddress = const Value.absent(),
+    this.summary = const Value.absent(),
+    this.avatarJpeg = const Value.absent(),
   });
   NodeIdentityTableCompanion.insert({
     this.id = const Value.absent(),
@@ -1760,6 +1887,8 @@ class NodeIdentityTableCompanion
     required String displayName,
     this.createdAt = const Value.absent(),
     this.nodePublicAddress = const Value.absent(),
+    this.summary = const Value.absent(),
+    this.avatarJpeg = const Value.absent(),
   }) : actorUrl = Value(actorUrl),
        publicKeyPem = Value(publicKeyPem),
        preferredUsername = Value(preferredUsername),
@@ -1772,6 +1901,8 @@ class NodeIdentityTableCompanion
     Expression<String>? displayName,
     Expression<DateTime>? createdAt,
     Expression<String>? nodePublicAddress,
+    Expression<String>? summary,
+    Expression<Uint8List>? avatarJpeg,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -1781,6 +1912,8 @@ class NodeIdentityTableCompanion
       if (displayName != null) 'display_name': displayName,
       if (createdAt != null) 'created_at': createdAt,
       if (nodePublicAddress != null) 'node_public_address': nodePublicAddress,
+      if (summary != null) 'summary': summary,
+      if (avatarJpeg != null) 'avatar_jpeg': avatarJpeg,
     });
   }
 
@@ -1792,6 +1925,8 @@ class NodeIdentityTableCompanion
     Value<String>? displayName,
     Value<DateTime>? createdAt,
     Value<String?>? nodePublicAddress,
+    Value<String?>? summary,
+    Value<Uint8List?>? avatarJpeg,
   }) {
     return NodeIdentityTableCompanion(
       id: id ?? this.id,
@@ -1801,6 +1936,8 @@ class NodeIdentityTableCompanion
       displayName: displayName ?? this.displayName,
       createdAt: createdAt ?? this.createdAt,
       nodePublicAddress: nodePublicAddress ?? this.nodePublicAddress,
+      summary: summary ?? this.summary,
+      avatarJpeg: avatarJpeg ?? this.avatarJpeg,
     );
   }
 
@@ -1828,6 +1965,12 @@ class NodeIdentityTableCompanion
     if (nodePublicAddress.present) {
       map['node_public_address'] = Variable<String>(nodePublicAddress.value);
     }
+    if (summary.present) {
+      map['summary'] = Variable<String>(summary.value);
+    }
+    if (avatarJpeg.present) {
+      map['avatar_jpeg'] = Variable<Uint8List>(avatarJpeg.value);
+    }
     return map;
   }
 
@@ -1840,7 +1983,9 @@ class NodeIdentityTableCompanion
           ..write('preferredUsername: $preferredUsername, ')
           ..write('displayName: $displayName, ')
           ..write('createdAt: $createdAt, ')
-          ..write('nodePublicAddress: $nodePublicAddress')
+          ..write('nodePublicAddress: $nodePublicAddress, ')
+          ..write('summary: $summary, ')
+          ..write('avatarJpeg: $avatarJpeg')
           ..write(')'))
         .toString();
   }
@@ -11236,6 +11381,7 @@ typedef $$TracksTableTableCreateCompanionBuilder =
       Value<int?> releaseYear,
       Value<int> durationMs,
       Value<String?> artworkPath,
+      Value<String?> isrc,
       Value<DateTime> dateAdded,
     });
 typedef $$TracksTableTableUpdateCompanionBuilder =
@@ -11252,6 +11398,7 @@ typedef $$TracksTableTableUpdateCompanionBuilder =
       Value<int?> releaseYear,
       Value<int> durationMs,
       Value<String?> artworkPath,
+      Value<String?> isrc,
       Value<DateTime> dateAdded,
     });
 
@@ -11340,6 +11487,11 @@ class $$TracksTableTableFilterComposer
 
   ColumnFilters<String> get artworkPath => $composableBuilder(
     column: $table.artworkPath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get isrc => $composableBuilder(
+    column: $table.isrc,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -11436,6 +11588,11 @@ class $$TracksTableTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get isrc => $composableBuilder(
+    column: $table.isrc,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get dateAdded => $composableBuilder(
     column: $table.dateAdded,
     builder: (column) => ColumnOrderings(column),
@@ -11519,6 +11676,9 @@ class $$TracksTableTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get isrc =>
+      $composableBuilder(column: $table.isrc, builder: (column) => column);
+
   GeneratedColumn<DateTime> get dateAdded =>
       $composableBuilder(column: $table.dateAdded, builder: (column) => column);
 
@@ -11586,6 +11746,7 @@ class $$TracksTableTableTableManager
                 Value<int?> releaseYear = const Value.absent(),
                 Value<int> durationMs = const Value.absent(),
                 Value<String?> artworkPath = const Value.absent(),
+                Value<String?> isrc = const Value.absent(),
                 Value<DateTime> dateAdded = const Value.absent(),
               }) => TracksTableCompanion(
                 id: id,
@@ -11600,6 +11761,7 @@ class $$TracksTableTableTableManager
                 releaseYear: releaseYear,
                 durationMs: durationMs,
                 artworkPath: artworkPath,
+                isrc: isrc,
                 dateAdded: dateAdded,
               ),
           createCompanionCallback:
@@ -11616,6 +11778,7 @@ class $$TracksTableTableTableManager
                 Value<int?> releaseYear = const Value.absent(),
                 Value<int> durationMs = const Value.absent(),
                 Value<String?> artworkPath = const Value.absent(),
+                Value<String?> isrc = const Value.absent(),
                 Value<DateTime> dateAdded = const Value.absent(),
               }) => TracksTableCompanion.insert(
                 id: id,
@@ -11630,6 +11793,7 @@ class $$TracksTableTableTableManager
                 releaseYear: releaseYear,
                 durationMs: durationMs,
                 artworkPath: artworkPath,
+                isrc: isrc,
                 dateAdded: dateAdded,
               ),
           withReferenceMapper: (p0) => p0
@@ -11831,6 +11995,8 @@ typedef $$NodeIdentityTableTableCreateCompanionBuilder =
       required String displayName,
       Value<DateTime> createdAt,
       Value<String?> nodePublicAddress,
+      Value<String?> summary,
+      Value<Uint8List?> avatarJpeg,
     });
 typedef $$NodeIdentityTableTableUpdateCompanionBuilder =
     NodeIdentityTableCompanion Function({
@@ -11841,6 +12007,8 @@ typedef $$NodeIdentityTableTableUpdateCompanionBuilder =
       Value<String> displayName,
       Value<DateTime> createdAt,
       Value<String?> nodePublicAddress,
+      Value<String?> summary,
+      Value<Uint8List?> avatarJpeg,
     });
 
 class $$NodeIdentityTableTableFilterComposer
@@ -11884,6 +12052,16 @@ class $$NodeIdentityTableTableFilterComposer
 
   ColumnFilters<String> get nodePublicAddress => $composableBuilder(
     column: $table.nodePublicAddress,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get summary => $composableBuilder(
+    column: $table.summary,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<Uint8List> get avatarJpeg => $composableBuilder(
+    column: $table.avatarJpeg,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -11931,6 +12109,16 @@ class $$NodeIdentityTableTableOrderingComposer
     column: $table.nodePublicAddress,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get summary => $composableBuilder(
+    column: $table.summary,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<Uint8List> get avatarJpeg => $composableBuilder(
+    column: $table.avatarJpeg,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$NodeIdentityTableTableAnnotationComposer
@@ -11968,6 +12156,14 @@ class $$NodeIdentityTableTableAnnotationComposer
 
   GeneratedColumn<String> get nodePublicAddress => $composableBuilder(
     column: $table.nodePublicAddress,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get summary =>
+      $composableBuilder(column: $table.summary, builder: (column) => column);
+
+  GeneratedColumn<Uint8List> get avatarJpeg => $composableBuilder(
+    column: $table.avatarJpeg,
     builder: (column) => column,
   );
 }
@@ -12019,6 +12215,8 @@ class $$NodeIdentityTableTableTableManager
                 Value<String> displayName = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<String?> nodePublicAddress = const Value.absent(),
+                Value<String?> summary = const Value.absent(),
+                Value<Uint8List?> avatarJpeg = const Value.absent(),
               }) => NodeIdentityTableCompanion(
                 id: id,
                 actorUrl: actorUrl,
@@ -12027,6 +12225,8 @@ class $$NodeIdentityTableTableTableManager
                 displayName: displayName,
                 createdAt: createdAt,
                 nodePublicAddress: nodePublicAddress,
+                summary: summary,
+                avatarJpeg: avatarJpeg,
               ),
           createCompanionCallback:
               ({
@@ -12037,6 +12237,8 @@ class $$NodeIdentityTableTableTableManager
                 required String displayName,
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<String?> nodePublicAddress = const Value.absent(),
+                Value<String?> summary = const Value.absent(),
+                Value<Uint8List?> avatarJpeg = const Value.absent(),
               }) => NodeIdentityTableCompanion.insert(
                 id: id,
                 actorUrl: actorUrl,
@@ -12045,6 +12247,8 @@ class $$NodeIdentityTableTableTableManager
                 displayName: displayName,
                 createdAt: createdAt,
                 nodePublicAddress: nodePublicAddress,
+                summary: summary,
+                avatarJpeg: avatarJpeg,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

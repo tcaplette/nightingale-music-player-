@@ -7,6 +7,7 @@ import 'package:nightingale/core/federation/actor_resolver.dart';
 import 'package:nightingale/features/federation/discovery/peer_discovery_service.dart';
 import 'package:nightingale/features/federation/mdns/mdns_discovery_service.dart';
 import 'package:nightingale/features/federation/screens/mastodon_import_screen.dart';
+import 'package:nightingale/features/onboarding/mastodon_account_provider.dart';
 import 'package:nightingale/features/social/providers/social_graph_notifier.dart';
 import 'package:nightingale/shared/components/identity/person_display.dart';
 import 'package:nightingale/shared/theme/app_colors.dart';
@@ -126,6 +127,8 @@ class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
   }
 
   Widget _buildMastodonSection(BuildContext context) {
+    final savedHandle = ref.watch(mastodonAccountProvider).valueOrNull;
+    if (savedHandle != null) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

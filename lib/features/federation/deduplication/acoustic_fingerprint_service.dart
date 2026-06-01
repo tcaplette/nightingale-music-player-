@@ -5,6 +5,7 @@ import 'package:drift/drift.dart';
 import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
 import 'package:nightingale/features/federation/deduplication/chromaprint_ffi.dart';
+import 'package:nightingale/features/library/models/track_model.dart';
 
 const _tag = 'acoustic_fingerprint';
 
@@ -54,6 +55,24 @@ class AcousticFingerprintService {
       AppLogger.error('Failed to fingerprint track $trackId', tag: _tag, error: e);
       return null;
     }
+  }
+
+  /// Checks whether two tracks are duplicates using ISRC equality first,
+  /// falling back to fingerprint comparison when ISRC is absent.
+  Future<bool> areDuplicates(TrackModel a, TrackModel b) async {
+    final isrcA = a.isrc?.trim();
+    final isrcB = b.isrc?.trim();
+    if (isrcA != null && isrcA.isNotEmpty && isrcB != null && isrcB.isNotEmpty) {
+      final match = isrcA == isrcB;
+      AppLogger.debug(
+        'ISRC comparison: $isrcA vs $isrcB → ${match ? "match" : "no match"}',
+        tag: _tag,
+      );
+      return match;
+    }
+    // Fall through to fingerprint comparison
+    final duplicates = await findDuplicates(a.id);
+    return duplicates.contains(b.id);
   }
 
   /// Finds potential duplicates by comparing fingerprints.
