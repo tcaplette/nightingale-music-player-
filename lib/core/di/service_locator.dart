@@ -33,9 +33,13 @@ import 'package:nightingale/core/repositories/activity_repository.dart';
 import 'package:nightingale/core/repositories/social_repository.dart';
 import 'package:nightingale/features/federation/social/social_subscribing_service.dart';
 import 'package:nightingale/features/federation/streaming/audio_cache_manager.dart';
+import 'package:nightingale/features/federation/streaming/chunk_cache_manager.dart';
+import 'package:nightingale/features/federation/streaming/chunk_manifest.dart';
+import 'package:nightingale/features/federation/streaming/seeding_power_policy.dart';
 import 'package:nightingale/features/federation/streaming/stream_resolver.dart';
 import 'package:nightingale/features/library/library_repository.dart';
 import 'package:nightingale/features/library/library_repository_impl.dart';
+import 'package:nightingale/features/library/services/album_metadata_fetch_service.dart';
 import 'package:nightingale/features/node_identity/local_address_resolver.dart';
 import 'package:nightingale/features/node_identity/migration_service.dart';
 import 'package:nightingale/features/node_identity/node_identity_repository.dart';
@@ -249,15 +253,32 @@ Future<void> setupServiceLocator() async {
     ),
   );
 
-  // Audio cache manager
+  // Audio cache manager (legacy — kept during migration period)
   _sl.registerSingleton<AudioCacheManager>(AudioCacheManager(db: db));
 
-  // Stream resolver (direct → cache → unavailable; no relay)
+  // Phase 8 — chunk-based cache infrastructure
+  final manifestRepo = ChunkManifestRepository(db: db);
+  _sl.registerSingleton<ChunkManifestRepository>(manifestRepo);
+
+  final chunkCache = ChunkCacheManager(
+    db: db,
+    manifestRepository: manifestRepo,
+  );
+  _sl.registerSingleton<ChunkCacheManager>(chunkCache);
+
+  // Seeding power policy — must be registered before stream resolver and
+  // federation server so both can call canSeed().
+  final seedingPolicy = SeedingPowerPolicy(settings: settingsRepo);
+  _sl.registerSingleton<SeedingPowerPolicy>(seedingPolicy);
+
+  // Stream resolver (chunk → direct → cache → unavailable)
   _sl.registerSingleton<StreamResolver>(
     StreamResolver(
       actorResolver: _sl<ActorResolver>(),
       reachability: _sl<NodeReachabilityService>(),
       cacheManager: _sl<AudioCacheManager>(),
+      chunkCacheManager: chunkCache,
+      manifestRepository: manifestRepo,
     ),
   );
 
@@ -398,6 +419,11 @@ Future<void> setupServiceLocator() async {
       db: db,
       sigService: _sl<HttpSignatureService>(),
     ),
+  );
+
+  // Album batch metadata fetch
+  _sl.registerSingleton<AlbumMetadataFetchService>(
+    AlbumMetadataFetchService(db: db),
   );
 
   // Register debug overlay tabs

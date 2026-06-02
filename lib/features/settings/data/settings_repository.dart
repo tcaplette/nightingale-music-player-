@@ -12,6 +12,8 @@ const _kNotifyActivityFeedKey = 'nightingale_settings_notify_activity_feed';
 const _kNotificationAutoClearKey = 'nightingale_settings_notification_auto_clear';
 const _kSharingScopeKey = 'nightingale_settings_sharing_scope';
 const _kListenActivityEnabledKey = 'nightingale_settings_listen_activity_enabled';
+const _kSeedingEnabledKey = 'nightingale_settings_seeding_enabled';
+const _kSeedingBatteryThresholdKey = 'nightingale_settings_seeding_battery_threshold';
 
 class SettingsRepository {
   SettingsRepository({FlutterSecureStorage? storage})
@@ -147,6 +149,26 @@ class SettingsRepository {
 
   Future<void> setListenActivityEnabled(bool enabled) =>
       _storage.write(key: _kListenActivityEnabledKey, value: enabled.toString());
+
+  // ── Seeding power policy ───────────────────────────────────────────────────
+
+  Future<bool> isSeedingEnabled() async {
+    final v = await _storage.read(key: _kSeedingEnabledKey);
+    return v != 'false'; // default on
+  }
+
+  Future<void> setSeedingEnabled(bool enabled) =>
+      _storage.write(key: _kSeedingEnabledKey, value: enabled.toString());
+
+  Future<int> getSeedingBatteryThreshold() async {
+    final v = await _storage.read(key: _kSeedingBatteryThresholdKey);
+    return int.tryParse(v ?? '') ?? 50; // default 50%
+  }
+
+  Future<void> setSeedingBatteryThreshold(int percent) => _storage.write(
+        key: _kSeedingBatteryThresholdKey,
+        value: percent.clamp(0, 100).toString(),
+      );
 }
 
 enum NotificationAutoClear {

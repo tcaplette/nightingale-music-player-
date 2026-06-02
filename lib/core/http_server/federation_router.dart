@@ -11,6 +11,7 @@ import 'package:nightingale/features/federation/serving/following_handler.dart';
 import 'package:nightingale/features/federation/serving/library_handler.dart';
 import 'package:nightingale/features/federation/serving/playlist_handler.dart';
 import 'package:nightingale/features/federation/serving/stream_handler.dart';
+import 'package:nightingale/features/federation/serving/chunk_handler.dart';
 
 Router buildFederationRouter() {
   final router = Router();
@@ -26,6 +27,8 @@ Router buildFederationRouter() {
   router.get('/users/<username>/followers', followersHandler);
   router.get('/users/<username>/following', followingHandler);
   router.get('/stream/<trackId>', streamHandler);
+  // Phase 8 — chunk-based swarming endpoint
+  router.get('/chunks/<hash>', chunkHandler);
 
   return router;
 }

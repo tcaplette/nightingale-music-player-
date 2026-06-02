@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:nightingale/features/library/models/track_model.dart';
 import 'package:nightingale/features/library/providers/library_providers.dart';
 import 'package:nightingale/features/library/screens/library_empty_state.dart';
+import 'package:nightingale/features/library/widgets/track_tile.dart';
 import 'package:nightingale/features/playback/providers/playback_providers.dart';
 import 'package:nightingale/shared/theme/app_spacing.dart';
 
@@ -76,7 +76,7 @@ class _GenreTrackList extends ConsumerWidget {
       data: (tracks) => Column(
         children: [
           for (var i = 0; i < tracks.length; i++)
-            _TrackRow(
+            TrackTile(
               track: tracks[i],
               onTap: () => ref
                   .read(playbackProvider.notifier)
@@ -88,22 +88,3 @@ class _GenreTrackList extends ConsumerWidget {
   }
 }
 
-class _TrackRow extends StatelessWidget {
-  const _TrackRow({required this.track, required this.onTap});
-  final TrackModel track;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xl,
-        vertical: AppSpacing.xs,
-      ),
-      title: Text(track.title, style: textTheme.bodyMedium),
-      subtitle: Text(track.artist, style: textTheme.labelSmall),
-      onTap: onTap,
-    );
-  }
-}

@@ -4,7 +4,11 @@ import 'package:just_audio/just_audio.dart' as ja;
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:nightingale/core/audio/audio_source.dart' as ng;
 import 'package:nightingale/core/audio/playback_state_model.dart';
+import 'package:nightingale/core/di/service_locator.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
+import 'package:nightingale/features/federation/streaming/chunk_cache_manager.dart';
+import 'package:nightingale/features/federation/streaming/chunk_manifest.dart';
+import 'package:nightingale/features/federation/streaming/chunk_stream_assembler.dart';
 import 'package:nightingale/features/library/models/track_model.dart';
 import 'package:nightingale/features/settings/models/playback_settings.dart';
 import 'package:nightingale/shared/services/haptic_service.dart';
@@ -129,7 +133,7 @@ class PlaybackEngine {
       _applyShuffleAroundIndex(startIndex);
     }
 
-    final sources = _queue.map(_resolveSource).toList();
+    final sources = await Future.wait(_queue.map(_resolveSourceAsync));
     print('NIGHTINGALE PLAYBACK: resolved ${sources.length} sources');
     for (var i = 0; i < sources.length && i < 3; i++) {
       print('NIGHTINGALE PLAYBACK:   source[$i]: ${sources[i]}');
@@ -198,7 +202,7 @@ class PlaybackEngine {
   Future<void> enqueue(TrackModel track) async {
     _queue.add(track);
     _originalQueue.add(track);
-    await _playlist.add(_resolveSource(track));
+    await _playlist.add(await _resolveSourceAsync(track));
     _emitState();
   }
 
@@ -206,7 +210,7 @@ class PlaybackEngine {
     final insertAt = _currentIndex + 1;
     _queue.insert(insertAt, track);
     _originalQueue.add(track);
-    await _playlist.insert(insertAt, _resolveSource(track));
+    await _playlist.insert(insertAt, await _resolveSourceAsync(track));
     _emitState();
   }
 
@@ -293,7 +297,7 @@ class PlaybackEngine {
       duration: track.duration,
     );
 
-    // Phase 4: remote tracks
+    // Phase 4: remote tracks — chunk path handled by _resolveSourceAsync
     if (track.isRemote) {
       final uri = track.streamUrl != null
           ? Uri.parse(track.streamUrl!)
@@ -309,6 +313,46 @@ class PlaybackEngine {
       ng.RemoteAudioSource(:final uri) =>
         ja.AudioSource.uri(uri, tag: mediaItem),
     };
+  }
+
+  /// Async version of [_resolveSource] — checks for a chunk manifest for
+  /// remote tracks before falling back to a URI source.
+  Future<ja.AudioSource> _resolveSourceAsync(TrackModel track) async {
+    if (track.isRemote) {
+      final chunkSource = await _tryChunkSource(track);
+      if (chunkSource != null) return chunkSource;
+    }
+    return _resolveSource(track);
+  }
+
+  /// Returns a [ChunkStreamAssembler] source if the track has a cached manifest,
+  /// otherwise null (falls through to URI-based streaming).
+  Future<ja.AudioSource?> _tryChunkSource(TrackModel track) async {
+    try {
+      final manifests = sl<ChunkManifestRepository>();
+      final chunkCache = sl<ChunkCacheManager>();
+      final trackId = track.id;
+
+      final manifest =
+          await manifests.getManifest(trackId, track.sourceActorUrl ?? '');
+      if (manifest == null) return null;
+
+      final mediaItem = MediaItem(
+        id: track.filePath,
+        title: track.title,
+        artist: track.artist,
+        duration: track.duration,
+      );
+
+      return ChunkStreamAssembler(
+        manifest: manifest,
+        cache: chunkCache,
+        onMissingChunk: (_) async => null,
+        tag: mediaItem,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   void _applyShuffleAroundIndex(int pivotIndex) {

@@ -48,6 +48,20 @@ class AlbumDao extends DatabaseAccessor<AppDatabase> with _$AlbumDaoMixin {
       (update(albumsTable)..where((a) => a.id.equals(albumId)))
           .write(AlbumsTableCompanion(trackCount: Value(count)));
 
+  Future<void> updateMetadata(
+    int albumId, {
+    String? artworkPath,
+    int? releaseYear,
+  }) =>
+      (update(albumsTable)..where((a) => a.id.equals(albumId))).write(
+        AlbumsTableCompanion(
+          artworkPath:
+              artworkPath != null ? Value(artworkPath) : const Value.absent(),
+          releaseYear:
+              releaseYear != null ? Value(releaseYear) : const Value.absent(),
+        ),
+      );
+
   Future<int> deleteAlbumById(int id) =>
       (delete(albumsTable)..where((a) => a.id.equals(id))).go();
 }

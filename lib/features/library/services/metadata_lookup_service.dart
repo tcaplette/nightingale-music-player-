@@ -69,7 +69,9 @@ class MetadataLookupService {
     }
   }
 
-  /// Looks up metadata using MusicBrainz first, falls back to iTunes.
+  /// Looks up metadata using MusicBrainz first.
+  /// If MusicBrainz returns a partial result (missing genre, artwork, or year),
+  /// also queries iTunes and merges the gap fields from it.
   Future<MetadataLookupResult?> lookup({
     required String title,
     required String artist,
@@ -78,10 +80,35 @@ class MetadataLookupService {
     final mb = await _withRetry(
       () => _lookupMusicBrainz(title: title, artist: artist),
     );
-    if (mb != null) return mb;
-    AppLogger.debug('MusicBrainz returned no result, trying iTunes', tag: _tag);
-    return _withRetry(
+
+    final mbIsComplete = mb != null &&
+        mb.genre != null &&
+        mb.artworkUrl != null &&
+        mb.releaseYear != null;
+
+    if (mbIsComplete) return mb;
+
+    AppLogger.debug(
+      mb == null
+          ? 'MusicBrainz returned no result, trying iTunes'
+          : 'MusicBrainz result incomplete, merging with iTunes',
+      tag: _tag,
+    );
+
+    final itunes = await _withRetry(
       () => _lookupItunes(title: title, artist: artist, album: album),
+    );
+
+    if (mb == null) return itunes;
+    if (itunes == null) return mb;
+
+    // Merge: prefer MusicBrainz values, fill missing fields from iTunes
+    return MetadataLookupResult(
+      album: mb.album ?? itunes.album,
+      releaseYear: mb.releaseYear ?? itunes.releaseYear,
+      genre: mb.genre ?? itunes.genre,
+      artworkUrl: mb.artworkUrl ?? itunes.artworkUrl,
+      source: 'MusicBrainz + iTunes',
     );
   }
 

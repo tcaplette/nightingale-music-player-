@@ -4,7 +4,6 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:metadata_god/metadata_god.dart' as mg;
 import 'package:nightingale/core/database/app_database.dart';
-import 'package:nightingale/core/database/tables/albums_table.dart';
 import 'package:nightingale/core/di/service_locator.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
 import 'package:nightingale/features/library/models/track_model.dart';
@@ -51,7 +50,6 @@ class _MetadataEditorSheetState extends State<_MetadataEditorSheet> {
     'title': 'Title',
     'artist': 'Artist',
     'album': 'Album',
-    'albumArtist': 'Album Artist',
     'genre': 'Genre',
     'releaseYear': 'Release Year',
   };
@@ -63,9 +61,6 @@ class _MetadataEditorSheetState extends State<_MetadataEditorSheet> {
       'title': TextEditingController(text: widget.track.title),
       'artist': TextEditingController(text: widget.track.artist),
       'album': TextEditingController(text: widget.track.albumName ?? ''),
-      'albumArtist': TextEditingController(
-        text: widget.track.albumArtist ?? '',
-      ),
       'genre': TextEditingController(text: widget.track.genre ?? ''),
       'releaseYear': TextEditingController(
         text: widget.track.releaseYear?.toString() ?? '',
@@ -192,7 +187,7 @@ class _MetadataEditorSheetState extends State<_MetadataEditorSheet> {
     final title = _controllers['title']!.text.trim();
     final artist = _controllers['artist']!.text.trim();
     final album = _controllers['album']!.text.trim();
-    final albumArtist = _controllers['albumArtist']!.text.trim();
+    final albumArtist = artist;
     final rawGenre = _controllers['genre']!.text.trim();
     final genre = rawGenre.isEmpty
         ? rawGenre
@@ -405,7 +400,6 @@ class _MetadataEditorSheetState extends State<_MetadataEditorSheet> {
       'title',
       'artist',
       'album',
-      'albumArtist',
       'genre',
       'releaseYear',
     ]) {
@@ -433,9 +427,8 @@ class _MetadataEditorSheetState extends State<_MetadataEditorSheet> {
       );
     }
 
-    // Artwork row — shows preview if available, otherwise note
+    // Artwork row — shows preview if available, otherwise neutral card
     fields.add(_ArtworkRow(
-      isMissing: missingFields.contains('artworkPath'),
       localPath: _previewArtworkPath ?? widget.track.artworkPath,
       pendingUrl: _pendingArtworkUrl,
     ));
@@ -484,7 +477,7 @@ class _LookupPreviewCard extends StatelessWidget {
                 width: 48,
                 height: 48,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const SizedBox(
+                errorBuilder: (context, e, stack) => const SizedBox(
                   width: 48,
                   height: 48,
                 ),
@@ -532,18 +525,17 @@ class _LookupPreviewCard extends StatelessWidget {
 
 class _ArtworkRow extends StatelessWidget {
   const _ArtworkRow({
-    required this.isMissing,
     required this.localPath,
     required this.pendingUrl,
   });
 
-  final bool isMissing;
   final String? localPath;
   final String? pendingUrl;
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
 
     if (localPath != null) {
       return Padding(
@@ -557,7 +549,7 @@ class _ArtworkRow extends StatelessWidget {
                 width: 40,
                 height: 40,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) =>
+                errorBuilder: (context, e, stack) =>
                     const Icon(Icons.broken_image_outlined, size: 40),
               ),
             ),
@@ -570,27 +562,31 @@ class _ArtworkRow extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: Row(
-        children: [
-          Icon(
-            Icons.image_not_supported_outlined,
-            size: 16,
-            color: isMissing
-                ? const Color(0xFFFF3B30)
-                : Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: AppSpacing.xs),
-          Expanded(
-            child: Text(
-              isMissing
-                  ? 'Artwork missing — tap Populate to fetch it automatically'
-                  : 'No artwork',
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.sm,
+        ),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.image_not_supported_outlined,
+              size: 16,
+              color: scheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Text(
+              'Album art unavailable — tap Populate to fetch it',
               style: textTheme.labelSmall?.copyWith(
-                color: isMissing ? const Color(0xFFFF3B30) : null,
+                color: scheme.onSurfaceVariant,
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

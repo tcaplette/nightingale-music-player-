@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:nightingale/features/library/models/track_model.dart';
 import 'package:nightingale/features/library/services/metadata_validator.dart';
 import 'package:nightingale/features/library/widgets/metadata_badge.dart';
+import 'package:nightingale/shared/components/artwork_thumbnail.dart';
 import 'package:nightingale/shared/theme/app_spacing.dart';
 
 class TrackTile extends StatelessWidget {
@@ -59,6 +60,7 @@ class TrackTile extends StatelessWidget {
           horizontal: AppSpacing.md,
           vertical: AppSpacing.xs,
         ),
+        leading: ArtworkThumbnail(path: track.artworkPath, size: 44),
         title: Text(
           track.title,
           style: textTheme.bodyLarge,

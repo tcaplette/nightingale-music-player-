@@ -30,6 +30,8 @@ import 'package:nightingale/core/database/tables/signal_events_table.dart';
 import 'package:nightingale/core/database/tables/social_activities_table.dart';
 import 'package:nightingale/core/database/tables/taste_scores_table.dart';
 import 'package:nightingale/core/database/tables/activity_queue_table.dart';
+import 'package:nightingale/core/database/tables/chunks_table.dart';
+import 'package:nightingale/core/database/tables/chunk_manifests_table.dart';
 import 'package:nightingale/core/database/tables/tracks_table.dart';
 
 part 'app_database.g.dart';
@@ -68,6 +70,9 @@ part 'app_database.g.dart';
     TasteScoresTable,
     // Phase 7 — offline activity queue
     ActivityQueueTable,
+    // Phase 8 — chunk-based federated audio cache
+    ChunksTable,
+    ChunkManifestsTable,
   ],
   daos: [TrackDao, AlbumDao, ArtistDao, SignalDao],
 )
@@ -76,7 +81,7 @@ class AppDatabase extends _$AppDatabase {
       : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 11;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -138,6 +143,11 @@ class AppDatabase extends _$AppDatabase {
         // User profile: bio and avatar photo.
         await m.addColumn(nodeIdentityTable, nodeIdentityTable.summary);
         await m.addColumn(nodeIdentityTable, nodeIdentityTable.avatarJpeg);
+      }
+      if (from < 11) {
+        // Phase 8: chunk-based federated audio cache.
+        await m.createTable(chunksTable);
+        await m.createTable(chunkManifestsTable);
       }
     },
   );

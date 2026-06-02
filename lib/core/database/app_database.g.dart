@@ -10957,6 +10957,770 @@ class ActivityQueueTableCompanion
   }
 }
 
+class $ChunksTableTable extends ChunksTable
+    with TableInfo<$ChunksTableTable, ChunksTableData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ChunksTableTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _hashMeta = const VerificationMeta('hash');
+  @override
+  late final GeneratedColumn<Uint8List> hash = GeneratedColumn<Uint8List>(
+    'hash',
+    aliasedName,
+    false,
+    type: DriftSqlType.blob,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _dataMeta = const VerificationMeta('data');
+  @override
+  late final GeneratedColumn<Uint8List> data = GeneratedColumn<Uint8List>(
+    'data',
+    aliasedName,
+    false,
+    type: DriftSqlType.blob,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sizeBytesMeta = const VerificationMeta(
+    'sizeBytes',
+  );
+  @override
+  late final GeneratedColumn<int> sizeBytes = GeneratedColumn<int>(
+    'size_bytes',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _lastAccessedMeta = const VerificationMeta(
+    'lastAccessed',
+  );
+  @override
+  late final GeneratedColumn<DateTime> lastAccessed = GeneratedColumn<DateTime>(
+    'last_accessed',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  static const VerificationMeta _isPinnedMeta = const VerificationMeta(
+    'isPinned',
+  );
+  @override
+  late final GeneratedColumn<bool> isPinned = GeneratedColumn<bool>(
+    'is_pinned',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_pinned" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    hash,
+    data,
+    sizeBytes,
+    lastAccessed,
+    isPinned,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'chunks';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ChunksTableData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('hash')) {
+      context.handle(
+        _hashMeta,
+        hash.isAcceptableOrUnknown(data['hash']!, _hashMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_hashMeta);
+    }
+    if (data.containsKey('data')) {
+      context.handle(
+        _dataMeta,
+        this.data.isAcceptableOrUnknown(data['data']!, _dataMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_dataMeta);
+    }
+    if (data.containsKey('size_bytes')) {
+      context.handle(
+        _sizeBytesMeta,
+        sizeBytes.isAcceptableOrUnknown(data['size_bytes']!, _sizeBytesMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sizeBytesMeta);
+    }
+    if (data.containsKey('last_accessed')) {
+      context.handle(
+        _lastAccessedMeta,
+        lastAccessed.isAcceptableOrUnknown(
+          data['last_accessed']!,
+          _lastAccessedMeta,
+        ),
+      );
+    }
+    if (data.containsKey('is_pinned')) {
+      context.handle(
+        _isPinnedMeta,
+        isPinned.isAcceptableOrUnknown(data['is_pinned']!, _isPinnedMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {hash};
+  @override
+  ChunksTableData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ChunksTableData(
+      hash: attachedDatabase.typeMapping.read(
+        DriftSqlType.blob,
+        data['${effectivePrefix}hash'],
+      )!,
+      data: attachedDatabase.typeMapping.read(
+        DriftSqlType.blob,
+        data['${effectivePrefix}data'],
+      )!,
+      sizeBytes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}size_bytes'],
+      )!,
+      lastAccessed: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}last_accessed'],
+      )!,
+      isPinned: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_pinned'],
+      )!,
+    );
+  }
+
+  @override
+  $ChunksTableTable createAlias(String alias) {
+    return $ChunksTableTable(attachedDatabase, alias);
+  }
+}
+
+class ChunksTableData extends DataClass implements Insertable<ChunksTableData> {
+  final Uint8List hash;
+  final Uint8List data;
+  final int sizeBytes;
+  final DateTime lastAccessed;
+  final bool isPinned;
+  const ChunksTableData({
+    required this.hash,
+    required this.data,
+    required this.sizeBytes,
+    required this.lastAccessed,
+    required this.isPinned,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['hash'] = Variable<Uint8List>(hash);
+    map['data'] = Variable<Uint8List>(data);
+    map['size_bytes'] = Variable<int>(sizeBytes);
+    map['last_accessed'] = Variable<DateTime>(lastAccessed);
+    map['is_pinned'] = Variable<bool>(isPinned);
+    return map;
+  }
+
+  ChunksTableCompanion toCompanion(bool nullToAbsent) {
+    return ChunksTableCompanion(
+      hash: Value(hash),
+      data: Value(data),
+      sizeBytes: Value(sizeBytes),
+      lastAccessed: Value(lastAccessed),
+      isPinned: Value(isPinned),
+    );
+  }
+
+  factory ChunksTableData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ChunksTableData(
+      hash: serializer.fromJson<Uint8List>(json['hash']),
+      data: serializer.fromJson<Uint8List>(json['data']),
+      sizeBytes: serializer.fromJson<int>(json['sizeBytes']),
+      lastAccessed: serializer.fromJson<DateTime>(json['lastAccessed']),
+      isPinned: serializer.fromJson<bool>(json['isPinned']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'hash': serializer.toJson<Uint8List>(hash),
+      'data': serializer.toJson<Uint8List>(data),
+      'sizeBytes': serializer.toJson<int>(sizeBytes),
+      'lastAccessed': serializer.toJson<DateTime>(lastAccessed),
+      'isPinned': serializer.toJson<bool>(isPinned),
+    };
+  }
+
+  ChunksTableData copyWith({
+    Uint8List? hash,
+    Uint8List? data,
+    int? sizeBytes,
+    DateTime? lastAccessed,
+    bool? isPinned,
+  }) => ChunksTableData(
+    hash: hash ?? this.hash,
+    data: data ?? this.data,
+    sizeBytes: sizeBytes ?? this.sizeBytes,
+    lastAccessed: lastAccessed ?? this.lastAccessed,
+    isPinned: isPinned ?? this.isPinned,
+  );
+  ChunksTableData copyWithCompanion(ChunksTableCompanion data) {
+    return ChunksTableData(
+      hash: data.hash.present ? data.hash.value : this.hash,
+      data: data.data.present ? data.data.value : this.data,
+      sizeBytes: data.sizeBytes.present ? data.sizeBytes.value : this.sizeBytes,
+      lastAccessed: data.lastAccessed.present
+          ? data.lastAccessed.value
+          : this.lastAccessed,
+      isPinned: data.isPinned.present ? data.isPinned.value : this.isPinned,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ChunksTableData(')
+          ..write('hash: $hash, ')
+          ..write('data: $data, ')
+          ..write('sizeBytes: $sizeBytes, ')
+          ..write('lastAccessed: $lastAccessed, ')
+          ..write('isPinned: $isPinned')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    $driftBlobEquality.hash(hash),
+    $driftBlobEquality.hash(data),
+    sizeBytes,
+    lastAccessed,
+    isPinned,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ChunksTableData &&
+          $driftBlobEquality.equals(other.hash, this.hash) &&
+          $driftBlobEquality.equals(other.data, this.data) &&
+          other.sizeBytes == this.sizeBytes &&
+          other.lastAccessed == this.lastAccessed &&
+          other.isPinned == this.isPinned);
+}
+
+class ChunksTableCompanion extends UpdateCompanion<ChunksTableData> {
+  final Value<Uint8List> hash;
+  final Value<Uint8List> data;
+  final Value<int> sizeBytes;
+  final Value<DateTime> lastAccessed;
+  final Value<bool> isPinned;
+  final Value<int> rowid;
+  const ChunksTableCompanion({
+    this.hash = const Value.absent(),
+    this.data = const Value.absent(),
+    this.sizeBytes = const Value.absent(),
+    this.lastAccessed = const Value.absent(),
+    this.isPinned = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ChunksTableCompanion.insert({
+    required Uint8List hash,
+    required Uint8List data,
+    required int sizeBytes,
+    this.lastAccessed = const Value.absent(),
+    this.isPinned = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : hash = Value(hash),
+       data = Value(data),
+       sizeBytes = Value(sizeBytes);
+  static Insertable<ChunksTableData> custom({
+    Expression<Uint8List>? hash,
+    Expression<Uint8List>? data,
+    Expression<int>? sizeBytes,
+    Expression<DateTime>? lastAccessed,
+    Expression<bool>? isPinned,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (hash != null) 'hash': hash,
+      if (data != null) 'data': data,
+      if (sizeBytes != null) 'size_bytes': sizeBytes,
+      if (lastAccessed != null) 'last_accessed': lastAccessed,
+      if (isPinned != null) 'is_pinned': isPinned,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ChunksTableCompanion copyWith({
+    Value<Uint8List>? hash,
+    Value<Uint8List>? data,
+    Value<int>? sizeBytes,
+    Value<DateTime>? lastAccessed,
+    Value<bool>? isPinned,
+    Value<int>? rowid,
+  }) {
+    return ChunksTableCompanion(
+      hash: hash ?? this.hash,
+      data: data ?? this.data,
+      sizeBytes: sizeBytes ?? this.sizeBytes,
+      lastAccessed: lastAccessed ?? this.lastAccessed,
+      isPinned: isPinned ?? this.isPinned,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (hash.present) {
+      map['hash'] = Variable<Uint8List>(hash.value);
+    }
+    if (data.present) {
+      map['data'] = Variable<Uint8List>(data.value);
+    }
+    if (sizeBytes.present) {
+      map['size_bytes'] = Variable<int>(sizeBytes.value);
+    }
+    if (lastAccessed.present) {
+      map['last_accessed'] = Variable<DateTime>(lastAccessed.value);
+    }
+    if (isPinned.present) {
+      map['is_pinned'] = Variable<bool>(isPinned.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ChunksTableCompanion(')
+          ..write('hash: $hash, ')
+          ..write('data: $data, ')
+          ..write('sizeBytes: $sizeBytes, ')
+          ..write('lastAccessed: $lastAccessed, ')
+          ..write('isPinned: $isPinned, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $ChunkManifestsTableTable extends ChunkManifestsTable
+    with TableInfo<$ChunkManifestsTableTable, ChunkManifestsTableData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ChunkManifestsTableTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _trackIdMeta = const VerificationMeta(
+    'trackId',
+  );
+  @override
+  late final GeneratedColumn<int> trackId = GeneratedColumn<int>(
+    'track_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceActorUrlMeta = const VerificationMeta(
+    'sourceActorUrl',
+  );
+  @override
+  late final GeneratedColumn<String> sourceActorUrl = GeneratedColumn<String>(
+    'source_actor_url',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _chunkHashesMeta = const VerificationMeta(
+    'chunkHashes',
+  );
+  @override
+  late final GeneratedColumn<String> chunkHashes = GeneratedColumn<String>(
+    'chunk_hashes',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _totalSizeBytesMeta = const VerificationMeta(
+    'totalSizeBytes',
+  );
+  @override
+  late final GeneratedColumn<int> totalSizeBytes = GeneratedColumn<int>(
+    'total_size_bytes',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fetchedAtMeta = const VerificationMeta(
+    'fetchedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> fetchedAt = GeneratedColumn<DateTime>(
+    'fetched_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    trackId,
+    sourceActorUrl,
+    chunkHashes,
+    totalSizeBytes,
+    fetchedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'chunk_manifests';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ChunkManifestsTableData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('track_id')) {
+      context.handle(
+        _trackIdMeta,
+        trackId.isAcceptableOrUnknown(data['track_id']!, _trackIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_trackIdMeta);
+    }
+    if (data.containsKey('source_actor_url')) {
+      context.handle(
+        _sourceActorUrlMeta,
+        sourceActorUrl.isAcceptableOrUnknown(
+          data['source_actor_url']!,
+          _sourceActorUrlMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceActorUrlMeta);
+    }
+    if (data.containsKey('chunk_hashes')) {
+      context.handle(
+        _chunkHashesMeta,
+        chunkHashes.isAcceptableOrUnknown(
+          data['chunk_hashes']!,
+          _chunkHashesMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_chunkHashesMeta);
+    }
+    if (data.containsKey('total_size_bytes')) {
+      context.handle(
+        _totalSizeBytesMeta,
+        totalSizeBytes.isAcceptableOrUnknown(
+          data['total_size_bytes']!,
+          _totalSizeBytesMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_totalSizeBytesMeta);
+    }
+    if (data.containsKey('fetched_at')) {
+      context.handle(
+        _fetchedAtMeta,
+        fetchedAt.isAcceptableOrUnknown(data['fetched_at']!, _fetchedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {trackId, sourceActorUrl};
+  @override
+  ChunkManifestsTableData map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ChunkManifestsTableData(
+      trackId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}track_id'],
+      )!,
+      sourceActorUrl: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_actor_url'],
+      )!,
+      chunkHashes: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}chunk_hashes'],
+      )!,
+      totalSizeBytes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}total_size_bytes'],
+      )!,
+      fetchedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}fetched_at'],
+      )!,
+    );
+  }
+
+  @override
+  $ChunkManifestsTableTable createAlias(String alias) {
+    return $ChunkManifestsTableTable(attachedDatabase, alias);
+  }
+}
+
+class ChunkManifestsTableData extends DataClass
+    implements Insertable<ChunkManifestsTableData> {
+  final int trackId;
+  final String sourceActorUrl;
+  final String chunkHashes;
+  final int totalSizeBytes;
+  final DateTime fetchedAt;
+  const ChunkManifestsTableData({
+    required this.trackId,
+    required this.sourceActorUrl,
+    required this.chunkHashes,
+    required this.totalSizeBytes,
+    required this.fetchedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['track_id'] = Variable<int>(trackId);
+    map['source_actor_url'] = Variable<String>(sourceActorUrl);
+    map['chunk_hashes'] = Variable<String>(chunkHashes);
+    map['total_size_bytes'] = Variable<int>(totalSizeBytes);
+    map['fetched_at'] = Variable<DateTime>(fetchedAt);
+    return map;
+  }
+
+  ChunkManifestsTableCompanion toCompanion(bool nullToAbsent) {
+    return ChunkManifestsTableCompanion(
+      trackId: Value(trackId),
+      sourceActorUrl: Value(sourceActorUrl),
+      chunkHashes: Value(chunkHashes),
+      totalSizeBytes: Value(totalSizeBytes),
+      fetchedAt: Value(fetchedAt),
+    );
+  }
+
+  factory ChunkManifestsTableData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ChunkManifestsTableData(
+      trackId: serializer.fromJson<int>(json['trackId']),
+      sourceActorUrl: serializer.fromJson<String>(json['sourceActorUrl']),
+      chunkHashes: serializer.fromJson<String>(json['chunkHashes']),
+      totalSizeBytes: serializer.fromJson<int>(json['totalSizeBytes']),
+      fetchedAt: serializer.fromJson<DateTime>(json['fetchedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'trackId': serializer.toJson<int>(trackId),
+      'sourceActorUrl': serializer.toJson<String>(sourceActorUrl),
+      'chunkHashes': serializer.toJson<String>(chunkHashes),
+      'totalSizeBytes': serializer.toJson<int>(totalSizeBytes),
+      'fetchedAt': serializer.toJson<DateTime>(fetchedAt),
+    };
+  }
+
+  ChunkManifestsTableData copyWith({
+    int? trackId,
+    String? sourceActorUrl,
+    String? chunkHashes,
+    int? totalSizeBytes,
+    DateTime? fetchedAt,
+  }) => ChunkManifestsTableData(
+    trackId: trackId ?? this.trackId,
+    sourceActorUrl: sourceActorUrl ?? this.sourceActorUrl,
+    chunkHashes: chunkHashes ?? this.chunkHashes,
+    totalSizeBytes: totalSizeBytes ?? this.totalSizeBytes,
+    fetchedAt: fetchedAt ?? this.fetchedAt,
+  );
+  ChunkManifestsTableData copyWithCompanion(ChunkManifestsTableCompanion data) {
+    return ChunkManifestsTableData(
+      trackId: data.trackId.present ? data.trackId.value : this.trackId,
+      sourceActorUrl: data.sourceActorUrl.present
+          ? data.sourceActorUrl.value
+          : this.sourceActorUrl,
+      chunkHashes: data.chunkHashes.present
+          ? data.chunkHashes.value
+          : this.chunkHashes,
+      totalSizeBytes: data.totalSizeBytes.present
+          ? data.totalSizeBytes.value
+          : this.totalSizeBytes,
+      fetchedAt: data.fetchedAt.present ? data.fetchedAt.value : this.fetchedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ChunkManifestsTableData(')
+          ..write('trackId: $trackId, ')
+          ..write('sourceActorUrl: $sourceActorUrl, ')
+          ..write('chunkHashes: $chunkHashes, ')
+          ..write('totalSizeBytes: $totalSizeBytes, ')
+          ..write('fetchedAt: $fetchedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    trackId,
+    sourceActorUrl,
+    chunkHashes,
+    totalSizeBytes,
+    fetchedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ChunkManifestsTableData &&
+          other.trackId == this.trackId &&
+          other.sourceActorUrl == this.sourceActorUrl &&
+          other.chunkHashes == this.chunkHashes &&
+          other.totalSizeBytes == this.totalSizeBytes &&
+          other.fetchedAt == this.fetchedAt);
+}
+
+class ChunkManifestsTableCompanion
+    extends UpdateCompanion<ChunkManifestsTableData> {
+  final Value<int> trackId;
+  final Value<String> sourceActorUrl;
+  final Value<String> chunkHashes;
+  final Value<int> totalSizeBytes;
+  final Value<DateTime> fetchedAt;
+  final Value<int> rowid;
+  const ChunkManifestsTableCompanion({
+    this.trackId = const Value.absent(),
+    this.sourceActorUrl = const Value.absent(),
+    this.chunkHashes = const Value.absent(),
+    this.totalSizeBytes = const Value.absent(),
+    this.fetchedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ChunkManifestsTableCompanion.insert({
+    required int trackId,
+    required String sourceActorUrl,
+    required String chunkHashes,
+    required int totalSizeBytes,
+    this.fetchedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : trackId = Value(trackId),
+       sourceActorUrl = Value(sourceActorUrl),
+       chunkHashes = Value(chunkHashes),
+       totalSizeBytes = Value(totalSizeBytes);
+  static Insertable<ChunkManifestsTableData> custom({
+    Expression<int>? trackId,
+    Expression<String>? sourceActorUrl,
+    Expression<String>? chunkHashes,
+    Expression<int>? totalSizeBytes,
+    Expression<DateTime>? fetchedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (trackId != null) 'track_id': trackId,
+      if (sourceActorUrl != null) 'source_actor_url': sourceActorUrl,
+      if (chunkHashes != null) 'chunk_hashes': chunkHashes,
+      if (totalSizeBytes != null) 'total_size_bytes': totalSizeBytes,
+      if (fetchedAt != null) 'fetched_at': fetchedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ChunkManifestsTableCompanion copyWith({
+    Value<int>? trackId,
+    Value<String>? sourceActorUrl,
+    Value<String>? chunkHashes,
+    Value<int>? totalSizeBytes,
+    Value<DateTime>? fetchedAt,
+    Value<int>? rowid,
+  }) {
+    return ChunkManifestsTableCompanion(
+      trackId: trackId ?? this.trackId,
+      sourceActorUrl: sourceActorUrl ?? this.sourceActorUrl,
+      chunkHashes: chunkHashes ?? this.chunkHashes,
+      totalSizeBytes: totalSizeBytes ?? this.totalSizeBytes,
+      fetchedAt: fetchedAt ?? this.fetchedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (trackId.present) {
+      map['track_id'] = Variable<int>(trackId.value);
+    }
+    if (sourceActorUrl.present) {
+      map['source_actor_url'] = Variable<String>(sourceActorUrl.value);
+    }
+    if (chunkHashes.present) {
+      map['chunk_hashes'] = Variable<String>(chunkHashes.value);
+    }
+    if (totalSizeBytes.present) {
+      map['total_size_bytes'] = Variable<int>(totalSizeBytes.value);
+    }
+    if (fetchedAt.present) {
+      map['fetched_at'] = Variable<DateTime>(fetchedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ChunkManifestsTableCompanion(')
+          ..write('trackId: $trackId, ')
+          ..write('sourceActorUrl: $sourceActorUrl, ')
+          ..write('chunkHashes: $chunkHashes, ')
+          ..write('totalSizeBytes: $totalSizeBytes, ')
+          ..write('fetchedAt: $fetchedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -11008,6 +11772,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   );
   late final $ActivityQueueTableTable activityQueueTable =
       $ActivityQueueTableTable(this);
+  late final $ChunksTableTable chunksTable = $ChunksTableTable(this);
+  late final $ChunkManifestsTableTable chunkManifestsTable =
+      $ChunkManifestsTableTable(this);
   late final TrackDao trackDao = TrackDao(this as AppDatabase);
   late final AlbumDao albumDao = AlbumDao(this as AppDatabase);
   late final ArtistDao artistDao = ArtistDao(this as AppDatabase);
@@ -11044,6 +11811,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     signalEventsTable,
     tasteScoresTable,
     activityQueueTable,
+    chunksTable,
+    chunkManifestsTable,
   ];
 }
 
@@ -17333,6 +18102,430 @@ typedef $$ActivityQueueTableTableProcessedTableManager =
       ActivityQueueTableData,
       PrefetchHooks Function()
     >;
+typedef $$ChunksTableTableCreateCompanionBuilder =
+    ChunksTableCompanion Function({
+      required Uint8List hash,
+      required Uint8List data,
+      required int sizeBytes,
+      Value<DateTime> lastAccessed,
+      Value<bool> isPinned,
+      Value<int> rowid,
+    });
+typedef $$ChunksTableTableUpdateCompanionBuilder =
+    ChunksTableCompanion Function({
+      Value<Uint8List> hash,
+      Value<Uint8List> data,
+      Value<int> sizeBytes,
+      Value<DateTime> lastAccessed,
+      Value<bool> isPinned,
+      Value<int> rowid,
+    });
+
+class $$ChunksTableTableFilterComposer
+    extends Composer<_$AppDatabase, $ChunksTableTable> {
+  $$ChunksTableTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<Uint8List> get hash => $composableBuilder(
+    column: $table.hash,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<Uint8List> get data => $composableBuilder(
+    column: $table.data,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sizeBytes => $composableBuilder(
+    column: $table.sizeBytes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get lastAccessed => $composableBuilder(
+    column: $table.lastAccessed,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isPinned => $composableBuilder(
+    column: $table.isPinned,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$ChunksTableTableOrderingComposer
+    extends Composer<_$AppDatabase, $ChunksTableTable> {
+  $$ChunksTableTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<Uint8List> get hash => $composableBuilder(
+    column: $table.hash,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<Uint8List> get data => $composableBuilder(
+    column: $table.data,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sizeBytes => $composableBuilder(
+    column: $table.sizeBytes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get lastAccessed => $composableBuilder(
+    column: $table.lastAccessed,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isPinned => $composableBuilder(
+    column: $table.isPinned,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ChunksTableTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ChunksTableTable> {
+  $$ChunksTableTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<Uint8List> get hash =>
+      $composableBuilder(column: $table.hash, builder: (column) => column);
+
+  GeneratedColumn<Uint8List> get data =>
+      $composableBuilder(column: $table.data, builder: (column) => column);
+
+  GeneratedColumn<int> get sizeBytes =>
+      $composableBuilder(column: $table.sizeBytes, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get lastAccessed => $composableBuilder(
+    column: $table.lastAccessed,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isPinned =>
+      $composableBuilder(column: $table.isPinned, builder: (column) => column);
+}
+
+class $$ChunksTableTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ChunksTableTable,
+          ChunksTableData,
+          $$ChunksTableTableFilterComposer,
+          $$ChunksTableTableOrderingComposer,
+          $$ChunksTableTableAnnotationComposer,
+          $$ChunksTableTableCreateCompanionBuilder,
+          $$ChunksTableTableUpdateCompanionBuilder,
+          (
+            ChunksTableData,
+            BaseReferences<_$AppDatabase, $ChunksTableTable, ChunksTableData>,
+          ),
+          ChunksTableData,
+          PrefetchHooks Function()
+        > {
+  $$ChunksTableTableTableManager(_$AppDatabase db, $ChunksTableTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ChunksTableTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ChunksTableTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ChunksTableTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<Uint8List> hash = const Value.absent(),
+                Value<Uint8List> data = const Value.absent(),
+                Value<int> sizeBytes = const Value.absent(),
+                Value<DateTime> lastAccessed = const Value.absent(),
+                Value<bool> isPinned = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ChunksTableCompanion(
+                hash: hash,
+                data: data,
+                sizeBytes: sizeBytes,
+                lastAccessed: lastAccessed,
+                isPinned: isPinned,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required Uint8List hash,
+                required Uint8List data,
+                required int sizeBytes,
+                Value<DateTime> lastAccessed = const Value.absent(),
+                Value<bool> isPinned = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ChunksTableCompanion.insert(
+                hash: hash,
+                data: data,
+                sizeBytes: sizeBytes,
+                lastAccessed: lastAccessed,
+                isPinned: isPinned,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ChunksTableTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ChunksTableTable,
+      ChunksTableData,
+      $$ChunksTableTableFilterComposer,
+      $$ChunksTableTableOrderingComposer,
+      $$ChunksTableTableAnnotationComposer,
+      $$ChunksTableTableCreateCompanionBuilder,
+      $$ChunksTableTableUpdateCompanionBuilder,
+      (
+        ChunksTableData,
+        BaseReferences<_$AppDatabase, $ChunksTableTable, ChunksTableData>,
+      ),
+      ChunksTableData,
+      PrefetchHooks Function()
+    >;
+typedef $$ChunkManifestsTableTableCreateCompanionBuilder =
+    ChunkManifestsTableCompanion Function({
+      required int trackId,
+      required String sourceActorUrl,
+      required String chunkHashes,
+      required int totalSizeBytes,
+      Value<DateTime> fetchedAt,
+      Value<int> rowid,
+    });
+typedef $$ChunkManifestsTableTableUpdateCompanionBuilder =
+    ChunkManifestsTableCompanion Function({
+      Value<int> trackId,
+      Value<String> sourceActorUrl,
+      Value<String> chunkHashes,
+      Value<int> totalSizeBytes,
+      Value<DateTime> fetchedAt,
+      Value<int> rowid,
+    });
+
+class $$ChunkManifestsTableTableFilterComposer
+    extends Composer<_$AppDatabase, $ChunkManifestsTableTable> {
+  $$ChunkManifestsTableTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get trackId => $composableBuilder(
+    column: $table.trackId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceActorUrl => $composableBuilder(
+    column: $table.sourceActorUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get chunkHashes => $composableBuilder(
+    column: $table.chunkHashes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get totalSizeBytes => $composableBuilder(
+    column: $table.totalSizeBytes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get fetchedAt => $composableBuilder(
+    column: $table.fetchedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$ChunkManifestsTableTableOrderingComposer
+    extends Composer<_$AppDatabase, $ChunkManifestsTableTable> {
+  $$ChunkManifestsTableTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get trackId => $composableBuilder(
+    column: $table.trackId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceActorUrl => $composableBuilder(
+    column: $table.sourceActorUrl,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get chunkHashes => $composableBuilder(
+    column: $table.chunkHashes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get totalSizeBytes => $composableBuilder(
+    column: $table.totalSizeBytes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get fetchedAt => $composableBuilder(
+    column: $table.fetchedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ChunkManifestsTableTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ChunkManifestsTableTable> {
+  $$ChunkManifestsTableTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get trackId =>
+      $composableBuilder(column: $table.trackId, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceActorUrl => $composableBuilder(
+    column: $table.sourceActorUrl,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get chunkHashes => $composableBuilder(
+    column: $table.chunkHashes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get totalSizeBytes => $composableBuilder(
+    column: $table.totalSizeBytes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get fetchedAt =>
+      $composableBuilder(column: $table.fetchedAt, builder: (column) => column);
+}
+
+class $$ChunkManifestsTableTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ChunkManifestsTableTable,
+          ChunkManifestsTableData,
+          $$ChunkManifestsTableTableFilterComposer,
+          $$ChunkManifestsTableTableOrderingComposer,
+          $$ChunkManifestsTableTableAnnotationComposer,
+          $$ChunkManifestsTableTableCreateCompanionBuilder,
+          $$ChunkManifestsTableTableUpdateCompanionBuilder,
+          (
+            ChunkManifestsTableData,
+            BaseReferences<
+              _$AppDatabase,
+              $ChunkManifestsTableTable,
+              ChunkManifestsTableData
+            >,
+          ),
+          ChunkManifestsTableData,
+          PrefetchHooks Function()
+        > {
+  $$ChunkManifestsTableTableTableManager(
+    _$AppDatabase db,
+    $ChunkManifestsTableTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ChunkManifestsTableTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ChunkManifestsTableTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$ChunkManifestsTableTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> trackId = const Value.absent(),
+                Value<String> sourceActorUrl = const Value.absent(),
+                Value<String> chunkHashes = const Value.absent(),
+                Value<int> totalSizeBytes = const Value.absent(),
+                Value<DateTime> fetchedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ChunkManifestsTableCompanion(
+                trackId: trackId,
+                sourceActorUrl: sourceActorUrl,
+                chunkHashes: chunkHashes,
+                totalSizeBytes: totalSizeBytes,
+                fetchedAt: fetchedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required int trackId,
+                required String sourceActorUrl,
+                required String chunkHashes,
+                required int totalSizeBytes,
+                Value<DateTime> fetchedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ChunkManifestsTableCompanion.insert(
+                trackId: trackId,
+                sourceActorUrl: sourceActorUrl,
+                chunkHashes: chunkHashes,
+                totalSizeBytes: totalSizeBytes,
+                fetchedAt: fetchedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ChunkManifestsTableTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ChunkManifestsTableTable,
+      ChunkManifestsTableData,
+      $$ChunkManifestsTableTableFilterComposer,
+      $$ChunkManifestsTableTableOrderingComposer,
+      $$ChunkManifestsTableTableAnnotationComposer,
+      $$ChunkManifestsTableTableCreateCompanionBuilder,
+      $$ChunkManifestsTableTableUpdateCompanionBuilder,
+      (
+        ChunkManifestsTableData,
+        BaseReferences<
+          _$AppDatabase,
+          $ChunkManifestsTableTable,
+          ChunkManifestsTableData
+        >,
+      ),
+      ChunkManifestsTableData,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -17394,4 +18587,8 @@ class $AppDatabaseManager {
       $$TasteScoresTableTableTableManager(_db, _db.tasteScoresTable);
   $$ActivityQueueTableTableTableManager get activityQueueTable =>
       $$ActivityQueueTableTableTableManager(_db, _db.activityQueueTable);
+  $$ChunksTableTableTableManager get chunksTable =>
+      $$ChunksTableTableTableManager(_db, _db.chunksTable);
+  $$ChunkManifestsTableTableTableManager get chunkManifestsTable =>
+      $$ChunkManifestsTableTableTableManager(_db, _db.chunkManifestsTable);
 }
