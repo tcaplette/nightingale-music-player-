@@ -1,9 +1,4 @@
-# Claude Code & OpenCode local config
-.claude/
-.opencode/
-
 # Dev tooling / working files
-openspec/
 icon/
 flutter_01.png
 ROADMAP.md
