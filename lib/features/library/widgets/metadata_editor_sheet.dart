@@ -41,6 +41,7 @@ class _MetadataEditorSheetState extends State<_MetadataEditorSheet> {
   late final Map<String, TextEditingController> _controllers;
   bool _saving = false;
   bool _populating = false;
+  bool _deleting = false;
   String? _errorMessage;
   MetadataLookupResult? _lookupResult;
   String? _pendingArtworkUrl;  // URL to download on save
@@ -165,6 +166,48 @@ class _MetadataEditorSheetState extends State<_MetadataEditorSheet> {
       return legacy.isGranted;
     }
     return true;
+  }
+
+  Future<void> _delete() async {
+    final scheme = Theme.of(context).colorScheme;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete song'),
+        content: const Text(
+          'This will permanently delete the file from your device. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: scheme.error),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _deleting = true);
+    try {
+      final file = File(widget.track.filePath);
+      if (await file.exists()) await file.delete();
+      await sl<AppDatabase>().trackDao.deleteTrackByFilePath(widget.track.filePath);
+    } catch (e) {
+      AppLogger.warning('Track delete failed: $e', tag: _tag);
+      if (mounted) {
+        setState(() {
+          _deleting = false;
+          _errorMessage = 'Delete failed: $e';
+        });
+      }
+      return;
+    }
+    if (mounted) Navigator.of(context).pop();
   }
 
   Future<void> _save() async {
@@ -385,6 +428,22 @@ class _MetadataEditorSheetState extends State<_MetadataEditorSheet> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Text('Save'),
+              ),
+            ),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: (_saving || _populating || _deleting) ? null : _delete,
+                style: TextButton.styleFrom(
+                  foregroundColor: Theme.of(context).colorScheme.error,
+                ),
+                child: _deleting
+                    ? const SizedBox(
+                        height: 14,
+                        width: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Delete from device'),
               ),
             ),
           ],

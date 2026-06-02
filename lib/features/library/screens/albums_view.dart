@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/core/di/service_locator.dart';
 import 'package:nightingale/features/library/models/album_model.dart';
 import 'package:nightingale/features/library/providers/library_providers.dart';
@@ -131,6 +132,7 @@ class _AlbumFetchSheetState extends State<_AlbumFetchSheet> {
 
   _FetchSheetState _state = _FetchSheetState.idle;
   AlbumPreviewResult? _preview;
+  bool _deleting = false;
 
   @override
   void initState() {
@@ -144,6 +146,49 @@ class _AlbumFetchSheetState extends State<_AlbumFetchSheet> {
     _nameCtrl.dispose();
     _artistCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _delete() async {
+    final scheme = Theme.of(context).colorScheme;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete album'),
+        content: const Text(
+          'This will permanently delete all tracks in this album from your device. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: scheme.error),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _deleting = true);
+    try {
+      final db = sl<AppDatabase>();
+      final tracks = await db.trackDao.getTracksByAlbum(widget.album.id);
+      for (final track in tracks) {
+        final file = File(track.filePath);
+        if (await file.exists()) await file.delete();
+      }
+      await db.trackDao.deleteTracksWithFilePaths(
+        tracks.map((t) => t.filePath).toSet(),
+      );
+      await db.albumDao.deleteAlbumById(widget.album.id);
+    } catch (e) {
+      if (mounted) setState(() => _deleting = false);
+      return;
+    }
+    if (mounted) Navigator.of(context).pop();
   }
 
   Future<void> _search() async {
@@ -296,6 +341,24 @@ class _AlbumFetchSheetState extends State<_AlbumFetchSheet> {
                   child: const Text('Apply to all tracks'),
                 ),
               ),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: (_state == _FetchSheetState.searching || _deleting)
+                    ? null
+                    : _delete,
+                style: TextButton.styleFrom(
+                  foregroundColor: Theme.of(context).colorScheme.error,
+                ),
+                child: _deleting
+                    ? const SizedBox(
+                        height: 14,
+                        width: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Delete album from device'),
+              ),
+            ),
           ],
         ),
       ),
