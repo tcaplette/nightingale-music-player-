@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -43,8 +45,10 @@ class MiniPlayer extends ConsumerWidget {
         child: Row(
           children: [
             const SizedBox(width: AppSpacing.sm),
-            // Artwork thumbnail
-            _ArtworkThumb(artworkPath: track.artworkPath),
+            // Artwork thumbnail — falls back to album artwork if track has none
+            _ArtworkThumb(
+              artworkPath: track.artworkPath ?? track.albumArtworkPath,
+            ),
             const SizedBox(width: AppSpacing.sm),
             // Track info
             Expanded(
@@ -108,12 +112,12 @@ class _ArtworkThumb extends StatelessWidget {
     if (artworkPath != null) {
       return ClipRRect(
         borderRadius: AppRadius.smAll,
-        child: Image.asset(
-          artworkPath!,
+        child: Image.file(
+          File(artworkPath!),
           width: size,
           height: size,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _placeholder(scheme, size),
+          errorBuilder: (context, e, stack) => _placeholder(scheme, size),
         ),
       );
     }

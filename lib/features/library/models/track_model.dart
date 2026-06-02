@@ -16,6 +16,7 @@ class TrackModel {
     this.releaseYear,
     required this.durationMs,
     this.artworkPath,
+    this.albumArtworkPath,
     required this.dateAdded,
     // Phase 4: federation fields
     this.sourceActorUrl,
@@ -38,6 +39,7 @@ class TrackModel {
   final int? releaseYear;
   final int durationMs;
   final String? artworkPath;
+  final String? albumArtworkPath;
   final DateTime dateAdded;
 
   // Phase 4: federation fields
@@ -52,7 +54,7 @@ class TrackModel {
 
   bool get isRemote => sourceActorUrl != null;
 
-  factory TrackModel.fromRow(TracksTableData row, {String? albumName}) {
+  factory TrackModel.fromRow(TracksTableData row, {String? albumName, String? albumArtworkPath}) {
     return TrackModel(
       id: row.id,
       filePath: row.filePath,
@@ -67,6 +69,7 @@ class TrackModel {
       releaseYear: row.releaseYear,
       durationMs: row.durationMs,
       artworkPath: row.artworkPath,
+      albumArtworkPath: albumArtworkPath,
       dateAdded: row.dateAdded,
       isrc: row.isrc,
     );

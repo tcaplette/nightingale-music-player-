@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nightingale/features/library/providers/library_providers.dart';
@@ -26,16 +28,12 @@ class AlbumDetailScreen extends ConsumerWidget {
           }
           return CustomScrollView(
             slivers: [
-              SliverAppBar(
-                expandedHeight: 280,
-                pinned: true,
-                flexibleSpace: FlexibleSpaceBar(
-                  background: _AlbumHeader(
-                    artworkPath: album.artworkPath,
-                    albumName: album.name,
-                    artistName: album.artist,
-                    releaseYear: album.releaseYear,
-                  ),
+              SliverToBoxAdapter(
+                child: _AlbumHeader(
+                  artworkPath: album.artworkPath,
+                  albumName: album.name,
+                  artistName: album.artist,
+                  releaseYear: album.releaseYear,
                 ),
               ),
               SliverToBoxAdapter(
@@ -43,7 +41,7 @@ class AlbumDetailScreen extends ConsumerWidget {
                   padding: const EdgeInsets.all(AppSpacing.md),
                   child: tracksAsync.when(
                     loading: () => const SizedBox.shrink(),
-                    error: (_, __) => const SizedBox.shrink(),
+                    error: (e, _) => const SizedBox.shrink(),
                     data: (tracks) => AppButton(
                       label: 'Play Album',
                       onPressed: tracks.isEmpty
@@ -137,13 +135,14 @@ class _AlbumHeader extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.end,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
+          AspectRatio(
+            aspectRatio: 1,
             child: artworkPath != null
-                ? Image.asset(
-                    artworkPath!,
+                ? Image.file(
+                    File(artworkPath!),
                     fit: BoxFit.cover,
                     width: double.infinity,
-                    errorBuilder: (_, __, ___) => _artworkPlaceholder(scheme),
+                    errorBuilder: (context, e, stack) => _artworkPlaceholder(scheme),
                   )
                 : _artworkPlaceholder(scheme),
           ),

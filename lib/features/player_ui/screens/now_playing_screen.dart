@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -64,7 +66,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                     switchOutCurve: AppMotion.curveStandard,
                     child: _ArtworkWidget(
                       key: ValueKey(track?.id),
-                      artworkPath: track?.artworkPath,
+                      artworkPath: track?.artworkPath ?? track?.albumArtworkPath,
                     ),
                   ),
                 ),
@@ -153,10 +155,10 @@ class _ArtworkWidget extends StatelessWidget {
     if (artworkPath != null) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        child: Image.asset(
-          artworkPath!,
+        child: Image.file(
+          File(artworkPath!),
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _placeholder(scheme),
+          errorBuilder: (context, e, stack) => _placeholder(scheme),
         ),
       );
     }
@@ -191,9 +193,9 @@ class _NetworkStateIndicator extends StatelessWidget {
 
     // Phase 4: Stream status indicators
     if (state.status == ps.PlaybackStatus.loading) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: AppSpacing.md),
-        child: const BufferingWidget(statusLabel: 'Buffering…'),
+      return const Padding(
+        padding: EdgeInsets.only(bottom: AppSpacing.md),
+        child: BufferingWidget(statusLabel: 'Buffering…'),
       );
     }
 
@@ -241,7 +243,7 @@ class _NetworkStateIndicator extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.offline_bolt, size: 14, color: AppColors.accent),
+            const Icon(Icons.offline_bolt, size: 14, color: AppColors.accent),
             const SizedBox(width: AppSpacing.xs),
             Text(
               'Cached',

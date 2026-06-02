@@ -99,8 +99,8 @@ final albumDetailProvider =
     });
 
 final albumTracksProvider =
-    FutureProvider.family<List<TrackModel>, int>((ref, albumId) {
-      return sl<LibraryRepository>().getTracksByAlbum(albumId);
+    StreamProvider.family<List<TrackModel>, int>((ref, albumId) {
+      return sl<LibraryRepository>().watchTracksByAlbum(albumId);
     });
 
 final artistAlbumsProvider =

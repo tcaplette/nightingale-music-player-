@@ -1,9 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Session-scoped Now Playing broadcast toggle.
-/// Defaults to off on every app launch per spec.
+/// Defaults to on (opt-out) on every app launch.
 class NowPlayingBroadcastNotifier extends StateNotifier<bool> {
-  NowPlayingBroadcastNotifier() : super(false);
+  NowPlayingBroadcastNotifier() : super(true);
 
   void enable() => state = true;
   void disable() => state = false;

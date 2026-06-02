@@ -23,6 +23,15 @@ class TrackDao extends DatabaseAccessor<AppDatabase> with _$TrackDaoMixin {
             ]))
           .get();
 
+  Stream<List<TracksTableData>> watchTracksByAlbum(int albumId) =>
+      (select(tracksTable)
+            ..where((t) => t.albumId.equals(albumId))
+            ..orderBy([
+              (t) => OrderingTerm.asc(t.discNumber),
+              (t) => OrderingTerm.asc(t.trackNumber),
+            ]))
+          .watch();
+
   Future<List<TracksTableData>> getTracksByArtist(String artist) =>
       (select(tracksTable)
             ..where((t) => t.artist.equals(artist))

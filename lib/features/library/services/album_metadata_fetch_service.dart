@@ -34,6 +34,8 @@ class MbTrackEntry {
 class AlbumLookupResult {
   const AlbumLookupResult({
     required this.tracks,
+    this.albumName,
+    this.artist,
     this.genre,
     this.releaseYear,
     this.artworkUrl,
@@ -41,6 +43,8 @@ class AlbumLookupResult {
   });
 
   final List<MbTrackEntry> tracks;
+  final String? albumName; // confirmed name from the matched release
+  final String? artist;    // confirmed artist from the matched release
   final String? genre;
   final int? releaseYear;
   final String? artworkUrl;
@@ -79,6 +83,16 @@ class AlbumMetadataFetchService {
 
   // ── Public API ────────────────────────────────────────────────────────────
 
+  /// Persists corrected album name and artist to the DB.
+  /// Called before a search so the album record stays in sync with what the
+  /// user typed in the fetch sheet.
+  Future<void> saveAlbumIdentity(
+    int albumId, {
+    required String name,
+    required String artist,
+  }) =>
+      _db.albumDao.updateNameAndArtist(albumId, name: name, artist: artist);
+
   /// Looks up album metadata and downloads artwork for preview — no writes.
   Future<AlbumPreviewResult?> previewAlbum(
     String albumName,
@@ -105,6 +119,7 @@ class AlbumMetadataFetchService {
     List<TrackModel> tracks, {
     String? albumNameOverride,
     String? artistOverride,
+    String? preloadedArtworkPath,
   }) async {
     if (tracks.isEmpty) {
       return const AlbumFetchResult(
@@ -148,17 +163,25 @@ class AlbumMetadataFetchService {
       );
     }
 
-    // 2. Download artwork once for the whole album
-    String? artworkPath;
-    if (albumResult.artworkUrl != null) {
+    // 2. Use preloaded artwork from preview if available; otherwise download.
+    // Reusing the preview artwork avoids a second Cover Art Archive round-trip
+    // (which can fail or return a different result).
+    String? artworkPath = preloadedArtworkPath;
+    if (artworkPath == null && albumResult.artworkUrl != null) {
       artworkPath = await _lookup.downloadArtwork(
         albumResult.artworkUrl!,
         album.id,
       );
     }
 
-    // 3. Update album row (artwork + year) if currently empty
-    await _updateAlbumRecord(album, albumResult, artworkPath);
+    // 3. Update album row with all resolved values (name, artist, artwork, year)
+    await _updateAlbumRecord(
+      album,
+      albumResult,
+      artworkPath,
+      resolvedName: resolvedName,
+      resolvedArtist: resolvedArtist,
+    );
 
     // 4. Match and apply per track
     if (albumResult.tracks.isNotEmpty) {
@@ -174,6 +197,8 @@ class AlbumMetadataFetchService {
             newGenre: albumResult.genre,
             newYear: albumResult.releaseYear,
             newArtworkPath: artworkPath,
+            resolvedAlbumName: resolvedName,
+            resolvedAlbumArtist: resolvedArtist,
           );
           matched.add(track);
         } catch (e) {
@@ -184,8 +209,25 @@ class AlbumMetadataFetchService {
           errors[track] = e.toString();
         }
       }
+
+      // Unmatched tracks still get album-level fields (artist, artwork, genre, year).
+      // We couldn't confirm their individual track data but they belong to this album.
+      for (final track in unmatchedList) {
+        try {
+          await _writeFields(
+            track: track,
+            newGenre: albumResult.genre,
+            newYear: albumResult.releaseYear,
+            newArtworkPath: artworkPath,
+            resolvedAlbumName: resolvedName,
+            resolvedAlbumArtist: resolvedArtist,
+          );
+        } catch (e) {
+          errors[track] = e.toString();
+        }
+      }
     } else {
-      // No MusicBrainz track listing — still apply album-level fields to all tracks
+      // No MusicBrainz track listing — apply album-level fields to all tracks
       for (final track in tracks) {
         try {
           await _writeFields(
@@ -193,6 +235,8 @@ class AlbumMetadataFetchService {
             newGenre: albumResult.genre,
             newYear: albumResult.releaseYear,
             newArtworkPath: artworkPath,
+            resolvedAlbumName: resolvedName,
+            resolvedAlbumArtist: resolvedArtist,
           );
           matched.add(track);
         } catch (e) {
@@ -217,8 +261,13 @@ class AlbumMetadataFetchService {
     int? expectedTrackCount,
   }) async {
     try {
+      // Lowercase both values — MusicBrainz Lucene is technically case-insensitive
+      // but mixed-case inputs can produce zero results in practice. Escaping
+      // internal quotes prevents malformed Lucene syntax.
+      final safeAlbum = albumName.toLowerCase().replaceAll('"', r'\"');
+      final safeArtist = artist.toLowerCase().replaceAll('"', r'\"');
       final query = Uri.encodeComponent(
-        'release:"$albumName" AND artist:"$artist"',
+        'release:"$safeAlbum" AND artist:"$safeArtist"',
       );
       final uri = Uri.parse(
         'https://musicbrainz.org/ws/2/release'
@@ -256,6 +305,10 @@ class AlbumMetadataFetchService {
 
       final mbid = release['id'] as String?;
       final releaseYear = _parseYear(release['date'] as String?);
+      final mbAlbumName = release['title'] as String?;
+
+      // Artist from artist-credit array: join all credited names
+      final mbArtist = _extractArtistCredit(release);
 
       // Genre from release tags (highest-count tag wins)
       final tags =
@@ -286,6 +339,8 @@ class AlbumMetadataFetchService {
         if (itunes != null) {
           return AlbumLookupResult(
             tracks: mbTracks,
+            albumName: mbAlbumName ?? itunes.albumName,
+            artist: mbArtist ?? itunes.artist,
             genre: genre ?? itunes.genre,
             releaseYear: releaseYear ?? itunes.releaseYear,
             artworkUrl: artworkUrl ?? itunes.artworkUrl,
@@ -296,6 +351,8 @@ class AlbumMetadataFetchService {
 
       return AlbumLookupResult(
         tracks: mbTracks,
+        albumName: mbAlbumName,
+        artist: mbArtist,
         genre: genre,
         releaseYear: releaseYear,
         artworkUrl: artworkUrl,
@@ -321,16 +378,12 @@ class AlbumMetadataFetchService {
       if ((r['status'] as String?)?.toLowerCase() == 'official') score += 2;
 
       if (expectedTrackCount != null) {
-        final media = (r['media'] as List?)?.cast<Map<String, dynamic>>();
-        if (media != null) {
-          final totalTracks = media.fold<int>(
-            0,
-            (sum, m) => sum + ((m['track-count'] as num?)?.toInt() ?? 0),
-          );
+        final totalTracks = _countReleaseTracks(r);
+        if (totalTracks > 0) {
           if (totalTracks == expectedTrackCount) {
-            score += 4; // exact match is a strong signal
+            score += 4;
           } else if ((totalTracks - expectedTrackCount).abs() == 1) {
-            score += 1; // off-by-one tolerated (hidden bonus tracks etc.)
+            score += 1;
           }
         }
       }
@@ -342,6 +395,36 @@ class AlbumMetadataFetchService {
     }
 
     return best ?? releases.first;
+  }
+
+  /// Counts the total number of tracks across all media in a release.
+  /// Uses the `track-count` field when available, falls back to counting the
+  /// `tracks` array — the search API sometimes omits the field but includes
+  /// the full track list.
+  static int _countReleaseTracks(Map<String, dynamic> release) {
+    final media = (release['media'] as List?)?.cast<Map<String, dynamic>>();
+    if (media == null || media.isEmpty) return 0;
+    return media.fold<int>(0, (sum, m) {
+      final tc = (m['track-count'] as num?)?.toInt();
+      if (tc != null) return sum + tc;
+      return sum + ((m['tracks'] as List?)?.length ?? 0);
+    });
+  }
+
+  /// Extracts artist name(s) from a MusicBrainz `artist-credit` array.
+  /// Joins multiple credits with " & ".
+  static String? _extractArtistCredit(Map<String, dynamic> release) {
+    final credits =
+        (release['artist-credit'] as List?)?.cast<Map<String, dynamic>>();
+    if (credits == null || credits.isEmpty) return null;
+    final names = credits
+        .map((c) =>
+            (c['name'] as String?) ??
+            (c['artist'] as Map<String, dynamic>?)?['name'] as String?)
+        .whereType<String>()
+        .where((n) => n.isNotEmpty)
+        .toList();
+    return names.isEmpty ? null : names.join(' & ');
   }
 
   List<MbTrackEntry> _extractTrackListing(Map<String, dynamic> release) {
@@ -435,9 +518,13 @@ class AlbumMetadataFetchService {
       final releaseYear = _parseYear(result['releaseDate'] as String?);
       final rawArtwork = result['artworkUrl100'] as String?;
       final artworkUrl = rawArtwork?.replaceAll('100x100bb', '600x600bb');
+      final itunesAlbumName = result['collectionName'] as String?;
+      final itunesArtist = result['artistName'] as String?;
 
       return AlbumLookupResult(
         tracks: const [],
+        albumName: itunesAlbumName,
+        artist: itunesArtist,
         genre: genre,
         releaseYear: releaseYear,
         artworkUrl: artworkUrl,
@@ -517,6 +604,8 @@ class AlbumMetadataFetchService {
     required String? newGenre,
     required int? newYear,
     required String? newArtworkPath,
+    String? resolvedAlbumName,
+    String? resolvedAlbumArtist,
   }) async {
     // Read current file tags — these are authoritative. DB values can be stale
     // (e.g. artist missing from DB but present in the file). Writing DB values
@@ -531,31 +620,35 @@ class AlbumMetadataFetchService {
       );
     }
 
-    // Baseline for fields we are NOT changing: prefer file > DB.
+    // Baseline for fields we are NOT changing.
+    // title: prefer file tag > DB.
+    // artist: fill from resolved album artist if the track's value is unknown/empty.
+    // album/albumArtist: always use resolved batch values so file and DB stay in sync.
     final baseTitle = _coalesce(fileTags?.title, track.title);
-    final baseArtist = _coalesce(fileTags?.artist, track.artist);
-    final baseAlbum = _coalesce(fileTags?.album, track.albumName);
-    final baseAlbumArtist = _coalesce(
-      fileTags?.albumArtist,
-      track.albumArtist,
-      track.artist,
-    );
+    final rawArtist = _coalesce(fileTags?.artist, track.artist);
+    final baseArtist = _isUnknown(rawArtist)
+        ? (resolvedAlbumArtist ?? rawArtist)
+        : rawArtist;
+    final baseAlbum = resolvedAlbumName ??
+        _coalesce(fileTags?.album, track.albumName);
+    final baseAlbumArtist = resolvedAlbumArtist ??
+        _coalesce(fileTags?.albumArtist, track.albumArtist, track.artist);
 
     // For the fields we are filling: check the FILE for emptiness, not the DB.
     final fileGenre = fileTags?.genre;
     final fileYear = fileTags?.year;
     final hasFileArtwork = fileTags?.picture != null;
 
-    final effectiveGenre =
-        _isEmpty(fileGenre) ? newGenre : fileGenre;
+    final effectiveGenre = _isEmpty(fileGenre) ? newGenre : fileGenre;
     final effectiveYear = (fileYear == null) ? newYear : fileYear;
     final effectiveArtworkPath =
         (!hasFileArtwork && _isEmpty(track.artworkPath))
             ? newArtworkPath
             : track.artworkPath;
 
-    // Nothing to do if all target fields are already present in the file
-    if (effectiveGenre == fileGenre &&
+    // Nothing to do
+    if (baseArtist == rawArtist &&
+        effectiveGenre == fileGenre &&
         effectiveYear == fileYear &&
         effectiveArtworkPath == track.artworkPath) { return; }
 
@@ -592,6 +685,7 @@ class AlbumMetadataFetchService {
     // Update DB only after successful file write
     await _db.trackDao.updateTrack(
       track.toUpdateCompanion().copyWith(
+        artist: Value(baseArtist ?? track.artist),
         genre: Value(effectiveGenre),
         releaseYear: Value(effectiveYear),
         artworkPath: Value(effectiveArtworkPath),
@@ -602,19 +696,32 @@ class AlbumMetadataFetchService {
   Future<void> _updateAlbumRecord(
     AlbumModel album,
     AlbumLookupResult result,
-    String? artworkPath,
-  ) async {
-    final newArtwork =
-        _isEmpty(album.artworkPath) ? artworkPath : null;
-    final newYear =
-        album.releaseYear == null ? result.releaseYear : null;
-    if (newArtwork == null && newYear == null) return;
+    String? artworkPath, {
+    required String resolvedName,
+    required String resolvedArtist,
+  }) async {
+    final effectiveArtwork =
+        _isEmpty(album.artworkPath) ? artworkPath : album.artworkPath;
+    final effectiveYear = album.releaseYear ?? result.releaseYear;
+
+    // If the user left the artist as an "unknown" placeholder, use the artist
+    // the lookup actually found instead of persisting the placeholder.
+    final effectiveArtist = _isUnknown(resolvedArtist)
+        ? (result.artist ?? resolvedArtist)
+        : resolvedArtist;
+
+    // Same for album name — if the user left it blank/unknown, use lookup result.
+    final effectiveName = _isUnknown(resolvedName)
+        ? (result.albumName ?? resolvedName)
+        : resolvedName;
 
     try {
-      await _db.albumDao.updateMetadata(
+      await _db.albumDao.updateAfterFetch(
         album.id,
-        artworkPath: newArtwork,
-        releaseYear: newYear,
+        name: effectiveName,
+        artist: effectiveArtist,
+        artworkPath: effectiveArtwork,
+        releaseYear: effectiveYear,
       );
     } catch (e) {
       AppLogger.warning('Failed to update album record: $e', tag: _tag);
@@ -625,6 +732,15 @@ class AlbumMetadataFetchService {
 
   static bool _isEmpty(String? value) =>
       value == null || value.trim().isEmpty;
+
+  static bool _isUnknown(String? value) {
+    if (_isEmpty(value)) return true;
+    final lower = value!.trim().toLowerCase();
+    return lower == 'unknown' ||
+        lower == 'unknown artist' ||
+        lower == 'unknown album' ||
+        lower == 'various artists';
+  }
 
   /// Returns the first non-empty value from the given candidates.
   static String? _coalesce(String? a, [String? b, String? c]) {

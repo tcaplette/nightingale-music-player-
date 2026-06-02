@@ -61,7 +61,7 @@ Future<void> _onAlbumLongPress(
   AlbumModel album,
 ) async {
   // Show the fetch sheet — user edits fields, previews result, then confirms
-  final confirmed = await showModalBottomSheet<({String albumName, String artist})?>(
+  final confirmed = await showModalBottomSheet<({String albumName, String artist, String? artworkPath})?>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Theme.of(context).colorScheme.surface,
@@ -73,7 +73,7 @@ Future<void> _onAlbumLongPress(
 
   if (confirmed == null || !context.mounted) return;
 
-  // Load tracks
+  // Stream provider auto-updates, so just read the current value.
   final tracks = await ref.read(albumTracksProvider(album.id).future);
   if (tracks.isEmpty || !context.mounted) return;
 
@@ -100,13 +100,17 @@ Future<void> _onAlbumLongPress(
     tracks,
     albumNameOverride: confirmed.albumName,
     artistOverride: confirmed.artist,
+    preloadedArtworkPath: confirmed.artworkPath,
   );
 
-  // Dismiss progress, show result, then invalidate (order matters — see nav lock fix)
+  // Dismiss progress, show result sheet, then invalidate providers.
+  // albumsProvider is invalidated so the tile reflects updated name/artist/artwork.
+  // Order matters — invalidate after navigation to avoid the nav-lock crash.
   navigator.pop();
   if (!context.mounted) return;
   showAlbumMetadataResultSheet(context, result);
-  ref.invalidate(albumTracksProvider(album.id));
+  ref.invalidate(albumDetailProvider(album.id));
+  ref.invalidate(albumsProvider);
 }
 
 // ── Album fetch sheet ─────────────────────────────────────────────────────────
@@ -152,7 +156,21 @@ class _AlbumFetchSheetState extends State<_AlbumFetchSheet> {
       _preview = null;
     });
 
-    final result = await sl<AlbumMetadataFetchService>().previewAlbum(
+    final service = sl<AlbumMetadataFetchService>();
+
+    // Persist corrected name/artist to the album record before searching so
+    // the DB stays in sync with what the user typed.
+    final nameChanged = name != widget.album.name;
+    final artistChanged = artist != widget.album.artist;
+    if (nameChanged || artistChanged) {
+      await service.saveAlbumIdentity(
+        widget.album.id,
+        name: name,
+        artist: artist,
+      );
+    }
+
+    final result = await service.previewAlbum(
       name,
       artist,
       widget.album.id,
@@ -273,6 +291,7 @@ class _AlbumFetchSheetState extends State<_AlbumFetchSheet> {
                   onPressed: () => Navigator.of(context).pop((
                     albumName: _nameCtrl.text.trim(),
                     artist: _artistCtrl.text.trim(),
+                    artworkPath: _preview?.artworkPath,
                   )),
                   child: const Text('Apply to all tracks'),
                 ),

@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart';
-import 'package:metadata_god/metadata_god.dart';
 import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
 import 'package:nightingale/features/library/library_repository.dart';
@@ -98,12 +97,12 @@ class LibraryRepositoryImpl implements LibraryRepository {
       scannedPaths.add(path);
 
       try {
-        final albumId = await _upsertAlbum(song);
+        final artworkPath = await _saveArtwork(song.id);
+        final albumId = await _upsertAlbum(song, artworkPath: artworkPath);
         await _upsertArtist(_normalise(song.artist) ?? 'Unknown Artist');
         final title = _normalise(song.title) ?? _titleFromPath(path);
         final artist = _normalise(song.artist) ?? 'Unknown Artist';
 
-        final artworkPath = await _saveArtwork(song.id);
         final isrc = await _readIsrc(path);
 
         await _db.trackDao.insertTrack(
@@ -182,16 +181,26 @@ class LibraryRepositoryImpl implements LibraryRepository {
     return null;
   }
 
-  Future<int?> _upsertAlbum(SongModel song) async {
+  Future<int?> _upsertAlbum(SongModel song, {String? artworkPath}) async {
     final albumName = _normalise(song.album);
     if (albumName == null) return null;
     final artist = _normalise(song.artist) ?? 'Unknown Artist';
     final existing = await _db.albumDao.getAlbumByNameAndArtist(albumName, artist);
-    if (existing != null) return existing.id;
+    if (existing != null) {
+      // If album exists but has no artwork, update it with this track's artwork
+      if (existing.artworkPath == null && artworkPath != null) {
+        await _db.albumDao.updateMetadata(
+          existing.id,
+          artworkPath: artworkPath,
+        );
+      }
+      return existing.id;
+    }
     return _db.albumDao.upsertAlbum(
       AlbumsTableCompanion.insert(
         name: albumName,
         artist: Value(artist),
+        artworkPath: Value(artworkPath),
       ),
     );
   }
@@ -226,15 +235,20 @@ class LibraryRepositoryImpl implements LibraryRepository {
   ) async {
     final albumIds = rows.map((r) => r.albumId).whereType<int>().toSet();
     final albumNames = <int, String>{};
+    final albumArtworkPaths = <int, String?>{};
     for (final id in albumIds) {
       final album = await _db.albumDao.getAlbumById(id);
-      if (album != null) albumNames[id] = album.name;
+      if (album != null) {
+        albumNames[id] = album.name;
+        albumArtworkPaths[id] = album.artworkPath;
+      }
     }
     return rows
         .map(
           (r) => TrackModel.fromRow(
             r,
             albumName: r.albumId != null ? albumNames[r.albumId] : null,
+            albumArtworkPath: r.albumId != null ? albumArtworkPaths[r.albumId] : null,
           ),
         )
         .toList();
@@ -267,7 +281,14 @@ class LibraryRepositoryImpl implements LibraryRepository {
   @override
   Future<List<TrackModel>> getTracksByAlbum(int albumId) async {
     final rows = await _db.trackDao.getTracksByAlbum(albumId);
-    return rows.map((r) => TrackModel.fromRow(r)).toList();
+    return _rowsToModels(rows);
+  }
+
+  @override
+  Stream<List<TrackModel>> watchTracksByAlbum(int albumId) {
+    return _db.trackDao
+        .watchTracksByAlbum(albumId)
+        .asyncMap(_rowsToModels);
   }
 
   @override

@@ -48,6 +48,18 @@ class AlbumDao extends DatabaseAccessor<AppDatabase> with _$AlbumDaoMixin {
       (update(albumsTable)..where((a) => a.id.equals(albumId)))
           .write(AlbumsTableCompanion(trackCount: Value(count)));
 
+  Future<void> updateNameAndArtist(
+    int albumId, {
+    required String name,
+    required String artist,
+  }) =>
+      (update(albumsTable)..where((a) => a.id.equals(albumId))).write(
+        AlbumsTableCompanion(
+          name: Value(name),
+          artist: Value(artist),
+        ),
+      );
+
   Future<void> updateMetadata(
     int albumId, {
     String? artworkPath,
@@ -55,6 +67,25 @@ class AlbumDao extends DatabaseAccessor<AppDatabase> with _$AlbumDaoMixin {
   }) =>
       (update(albumsTable)..where((a) => a.id.equals(albumId))).write(
         AlbumsTableCompanion(
+          artworkPath:
+              artworkPath != null ? Value(artworkPath) : const Value.absent(),
+          releaseYear:
+              releaseYear != null ? Value(releaseYear) : const Value.absent(),
+        ),
+      );
+
+  /// Writes all fields resolved during a batch fetch in one shot.
+  Future<void> updateAfterFetch(
+    int albumId, {
+    required String name,
+    required String artist,
+    String? artworkPath,
+    int? releaseYear,
+  }) =>
+      (update(albumsTable)..where((a) => a.id.equals(albumId))).write(
+        AlbumsTableCompanion(
+          name: Value(name),
+          artist: Value(artist),
           artworkPath:
               artworkPath != null ? Value(artworkPath) : const Value.absent(),
           releaseYear:

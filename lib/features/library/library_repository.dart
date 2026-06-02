@@ -16,6 +16,8 @@ abstract interface class LibraryRepository {
 
   Future<List<TrackModel>> getTracksByAlbum(int albumId);
 
+  Stream<List<TrackModel>> watchTracksByAlbum(int albumId);
+
   Future<AlbumModel?> getAlbumById(int albumId);
 
   Future<List<ArtistModel>> getArtists();
