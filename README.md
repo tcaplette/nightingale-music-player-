@@ -23,8 +23,6 @@ Nightingale is an open-source Flutter app built on ActivityPub. You install it, 
 
 Active development. The core player, federated identity, ActivityPub server, mDNS discovery, and social layer are built and working. Audio streaming between nodes is the next major milestone.
 
-See [ROADMAP.md](ROADMAP.md) for the full phase-by-phase plan.
-
 ---
 
 ## Tech stack
@@ -45,7 +43,9 @@ See [ROADMAP.md](ROADMAP.md) for the full phase-by-phase plan.
 
 ## Building
 
-**Prerequisites:** Flutter SDK ≥ 3.11.4, Android SDK or Xcode for target platform.
+**Platform:** Android only at this time.
+
+**Prerequisites:** Flutter SDK ≥ 3.11.4, Android SDK.
 
 ```sh
 # Install dependencies
@@ -64,7 +64,7 @@ Release builds require `SENTRY_DSN` and `NODE_BASE_URL` passed via `--dart-defin
 
 ## Contributing
 
-Contributions are welcome. The project is in active early development — check [ROADMAP.md](ROADMAP.md) for what's planned and what's next. Open an issue before starting significant work so we can align on approach.
+Contributions are welcome. The project is in active early development. Open an issue before starting significant work so we can align on approach.
 
 ---
 
