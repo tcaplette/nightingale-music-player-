@@ -449,14 +449,35 @@ class _FollowButton extends ConsumerStatefulWidget {
 
 class _FollowButtonState extends ConsumerState<_FollowButton> {
   bool _loading = false;
+  // Cached future so FutureBuilder doesn't restart on every rebuild.
+  late Future<String?> _followStateFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshFollowState();
+  }
+
+  void _refreshFollowState() {
+    _followStateFuture =
+        ref.read(socialGraphProvider.notifier).getFollowState(widget.actorUrl);
+    debugPrint('[FollowButton] refreshing follow-state future for ${widget.actorUrl}');
+  }
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<String?>(
-      future: ref
-          .read(socialGraphProvider.notifier)
-          .getFollowState(widget.actorUrl),
+      future: _followStateFuture,
       builder: (context, snapshot) {
+        debugPrint(
+          '[FollowButton] FutureBuilder rebuild '
+          'actorUrl=${widget.actorUrl} '
+          'connState=${snapshot.connectionState} '
+          'data=${snapshot.data} '
+          'error=${snapshot.error} '
+          '_loading=$_loading',
+        );
+
         final followState = snapshot.data;
 
         if (followState == 'accepted') {
@@ -484,8 +505,19 @@ class _FollowButtonState extends ConsumerState<_FollowButton> {
   }
 
   Future<void> _follow() async {
+    debugPrint('[FollowButton] _follow() called for ${widget.actorUrl}');
     setState(() => _loading = true);
-    await ref.read(socialGraphProvider.notifier).followActor(widget.actorUrl);
-    if (mounted) setState(() => _loading = false);
+    try {
+      await ref.read(socialGraphProvider.notifier).followActor(widget.actorUrl);
+      debugPrint('[FollowButton] followActor() completed for ${widget.actorUrl}');
+    } catch (e, st) {
+      debugPrint('[FollowButton] followActor() threw: $e\n$st');
+    }
+    if (mounted) {
+      setState(() {
+        _loading = false;
+        _refreshFollowState();
+      });
+    }
   }
 }

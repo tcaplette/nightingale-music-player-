@@ -480,10 +480,11 @@ class AlbumMetadataFetchService {
       final discTracks =
           (disc['tracks'] as List?)?.cast<Map<String, dynamic>>();
       if (discTracks == null) continue;
-      for (final t in discTracks) {
+      for (int i = 0; i < discTracks.length; i++) {
+        final t = discTracks[i];
         final trackNumber = int.tryParse(t['number']?.toString() ?? '') ??
             (t['position'] as num?)?.toInt() ??
-            0;
+            (i + 1); // 1-indexed fallback when MB omits number/position
         final durationMs = (t['length'] as num?)?.toInt() ?? 0;
         final title = t['title'] as String? ?? '';
         if (title.isEmpty) continue;
@@ -665,8 +666,10 @@ class AlbumMetadataFetchService {
   ) {
     final matched = <TrackModel, MbTrackEntry>{};
     final stillUnmatched = <TrackModel>[];
+    final claimedPass1 = <MbTrackEntry>{};
 
     // Pass 1: score-based matching (duration + title ≥ 3)
+    // Only consider unclaimed MB tracks so each MB entry is assigned at most once.
     for (final track in tracks) {
       var bestScore = 0;
       MbTrackEntry? bestCandidate;
@@ -675,6 +678,7 @@ class AlbumMetadataFetchService {
       _logScores(track, mbTracks);
 
       for (final candidate in mbTracks) {
+        if (claimedPass1.contains(candidate)) continue;
         final score = _scoreMatch(track, candidate);
         if (score > bestScore) {
           bestScore = score;
@@ -692,6 +696,7 @@ class AlbumMetadataFetchService {
 
       if (bestScore >= 3 && !tie && bestCandidate != null) {
         matched[track] = bestCandidate;
+        claimedPass1.add(bestCandidate);
       } else {
         stillUnmatched.add(track);
       }
