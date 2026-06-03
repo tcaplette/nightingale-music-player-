@@ -179,9 +179,16 @@ GoRouter buildRouter(ProviderContainer container) {
                   path: 'artists/:artistId',
                   name: 'artistDetail',
                   pageBuilder: (ctx, state) {
-                    final artistName =
-                        Uri.decodeComponent(state.pathParameters['artistId']!);
-                    return _fadePage(ctx, state, ArtistDetailScreen(artistName: artistName));
+                    final artistId =
+                        int.tryParse(state.pathParameters['artistId'] ?? '');
+                    if (artistId == null) {
+                      return _fadePage(
+                        ctx,
+                        state,
+                        const LibraryScreen(),
+                      );
+                    }
+                    return _fadePage(ctx, state, ArtistDetailScreen(artistId: artistId));
                   },
                 ),
               ],

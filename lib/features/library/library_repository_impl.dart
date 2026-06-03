@@ -99,9 +99,13 @@ class LibraryRepositoryImpl implements LibraryRepository {
       try {
         final artworkPath = await _saveArtwork(song.id);
         final albumId = await _upsertAlbum(song, artworkPath: artworkPath);
-        await _upsertArtist(_normalise(song.artist) ?? 'Unknown Artist');
         final title = _normalise(song.title) ?? _titleFromPath(path);
         final artist = _normalise(song.artist) ?? 'Unknown Artist';
+        final artistId = await _upsertArtist(artist);
+        final albumArtistName = _normalise(song.artist);
+        final albumArtistId = albumArtistName != null
+            ? await _upsertArtist(albumArtistName)
+            : null;
         final isrc = await _readIsrc(path);
 
         // New tracks are NOT auto-included — user must explicitly select them.
@@ -111,7 +115,9 @@ class LibraryRepositoryImpl implements LibraryRepository {
             title: title,
             artist: Value(artist),
             albumId: Value(albumId),
-            albumArtist: Value(_normalise(song.artist)),
+            artistId: Value(artistId),
+            albumArtistId: Value(albumArtistId),
+            albumArtist: Value(albumArtistName),
             trackNumber: Value(song.track == 0 ? null : song.track),
             genre: Value(_normaliseGenre(song.genre)),
             durationMs: Value(song.duration ?? 0),
@@ -198,8 +204,8 @@ class LibraryRepositoryImpl implements LibraryRepository {
     );
   }
 
-  Future<void> _upsertArtist(String name) async {
-    await _db.artistDao.upsertArtist(ArtistsTableCompanion.insert(name: name));
+  Future<int> _upsertArtist(String name) {
+    return _db.artistDao.upsertArtist(ArtistsTableCompanion.insert(name: name));
   }
 
   String? _normalise(String? value) {
@@ -343,7 +349,7 @@ class LibraryRepositoryImpl implements LibraryRepository {
     final rows = await _db.artistDao.getAllArtists();
     final artists = <ng.ArtistModel>[];
     for (final row in rows) {
-      final albums = await _db.albumDao.getAlbumsByArtist(row.name);
+      final albums = await _db.albumDao.getAlbumsByArtist(row.id);
       if (albums.isNotEmpty) {
         artists.add(ng.ArtistModel(id: row.id, name: row.name, albumCount: albums.length));
       }
@@ -359,7 +365,7 @@ class LibraryRepositoryImpl implements LibraryRepository {
       final rows = await _db.artistDao.getAllArtists();
       final artists = <ng.ArtistModel>[];
       for (final row in rows) {
-        final albums = await _db.albumDao.getAlbumsByArtist(row.name);
+        final albums = await _db.albumDao.getAlbumsByArtist(row.id);
         if (albums.isNotEmpty) {
           artists.add(ng.ArtistModel(id: row.id, name: row.name, albumCount: albums.length));
         }
@@ -369,15 +375,22 @@ class LibraryRepositoryImpl implements LibraryRepository {
   }
 
   @override
-  Future<List<ng.AlbumModel>> getAlbumsByArtist(String artist) async {
-    final rows = await _db.albumDao.getAlbumsByArtist(artist);
+  Future<List<ng.AlbumModel>> getAlbumsByArtist(int artistId) async {
+    final rows = await _db.albumDao.getAlbumsByArtist(artistId);
     return rows.map(ng.AlbumModel.fromRow).toList();
   }
 
   @override
-  Future<List<TrackModel>> getTracksByArtist(String artist) async {
-    final rows = await _db.trackDao.getTracksByArtist(artist);
+  Future<List<TrackModel>> getTracksByArtist(int artistId) async {
+    final rows = await _db.trackDao.getTracksByArtist(artistId);
     return rows.map((r) => TrackModel.fromRow(r)).toList();
+  }
+
+  @override
+  Future<ng.ArtistModel?> getArtistById(int artistId) async {
+    final row = await _db.artistDao.getArtistById(artistId);
+    if (row == null) return null;
+    return ng.ArtistModel(id: row.id, name: row.name);
   }
 
   @override

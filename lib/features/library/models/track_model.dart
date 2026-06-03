@@ -8,6 +8,8 @@ class TrackModel {
     required this.title,
     required this.artist,
     this.albumId,
+    this.artistId,
+    this.albumArtistId,
     this.albumName,
     this.albumArtist,
     this.trackNumber,
@@ -32,6 +34,8 @@ class TrackModel {
   final String title;
   final String artist;
   final int? albumId;
+  final int? artistId;
+  final int? albumArtistId;
   final String? albumName;
   final String? albumArtist;
   final int? trackNumber;
@@ -63,6 +67,8 @@ class TrackModel {
       title: row.title,
       artist: row.artist,
       albumId: row.albumId,
+      artistId: row.artistId,
+      albumArtistId: row.albumArtistId,
       albumName: albumName,
       albumArtist: row.albumArtist,
       trackNumber: row.trackNumber,
@@ -85,6 +91,8 @@ class TrackModel {
       title: Value(title),
       artist: Value(artist),
       albumId: Value(albumId),
+      artistId: Value(artistId),
+      albumArtistId: Value(albumArtistId),
       albumArtist: Value(albumArtist),
       trackNumber: Value(trackNumber),
       discNumber: Value(discNumber),

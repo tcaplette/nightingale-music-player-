@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 import 'package:nightingale/core/database/tables/albums_table.dart';
+import 'package:nightingale/core/database/tables/artists_table.dart';
 
 class TracksTable extends Table {
   @override
@@ -10,6 +11,10 @@ class TracksTable extends Table {
   TextColumn get title => text()();
   TextColumn get artist => text().withDefault(const Constant('Unknown Artist'))();
   IntColumn get albumId => integer().nullable().references(AlbumsTable, #id)();
+  @ReferenceName('artistTracks')
+  IntColumn get artistId => integer().nullable().references(ArtistsTable, #id)();
+  @ReferenceName('albumArtistTracks')
+  IntColumn get albumArtistId => integer().nullable().references(ArtistsTable, #id)();
   TextColumn get albumArtist => text().nullable()();
   IntColumn get trackNumber => integer().nullable()();
   IntColumn get discNumber => integer().nullable()();

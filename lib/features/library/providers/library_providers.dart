@@ -124,13 +124,18 @@ final albumTracksProvider =
     });
 
 final artistAlbumsProvider =
-    FutureProvider.family<List<AlbumModel>, String>((ref, artist) {
-      return sl<LibraryRepository>().getAlbumsByArtist(artist);
+    FutureProvider.family<List<AlbumModel>, int>((ref, artistId) {
+      return sl<LibraryRepository>().getAlbumsByArtist(artistId);
     });
 
 final artistTracksProvider =
-    FutureProvider.family<List<TrackModel>, String>((ref, artist) {
-      return sl<LibraryRepository>().getTracksByArtist(artist);
+    FutureProvider.family<List<TrackModel>, int>((ref, artistId) {
+      return sl<LibraryRepository>().getTracksByArtist(artistId);
+    });
+
+final artistByIdProvider =
+    FutureProvider.family<ArtistModel?, int>((ref, artistId) {
+      return sl<LibraryRepository>().getArtistById(artistId);
     });
 
 final genreTracksProvider =

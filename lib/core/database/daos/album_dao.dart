@@ -53,13 +53,13 @@ class AlbumDao extends DatabaseAccessor<AppDatabase> with _$AlbumDaoMixin {
 
   // ── Artist / search queries ────────────────────────────────────────────────
 
-  Future<List<AlbumsTableData>> getAlbumsByArtist(String artist) {
+  Future<List<AlbumsTableData>> getAlbumsByArtist(int artistId) {
     return customSelect(
-      'SELECT * FROM albums WHERE artist = ? AND id IN ('
-      '  SELECT DISTINCT album_id FROM tracks'
-      '  WHERE is_included = 1 AND album_id IS NOT NULL'
-      ') ORDER BY name ASC',
-      variables: [Variable.withString(artist)],
+      'SELECT DISTINCT a.* FROM albums a'
+      ' JOIN tracks t ON t.album_id = a.id'
+      ' WHERE t.artist_id = ? AND t.is_included = 1'
+      ' ORDER BY a.name ASC',
+      variables: [Variable.withInt(artistId)],
       readsFrom: {albumsTable, tracksTable},
     ).get().then((rows) => rows.map(_albumFromRow).toList());
   }

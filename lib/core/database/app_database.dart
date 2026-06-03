@@ -81,7 +81,7 @@ class AppDatabase extends _$AppDatabase {
       : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 12;
+  int get schemaVersion => 13;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -155,6 +155,28 @@ class AppDatabase extends _$AppDatabase {
         await customStatement(
           'ALTER TABLE tracks ADD COLUMN is_included INTEGER NOT NULL DEFAULT 1',
         );
+      }
+      if (from < 13) {
+        // Artist FK columns: replace string-match artist relationships with
+        // integer foreign keys for correct deduplication and navigation.
+        await customStatement(
+          'ALTER TABLE tracks ADD COLUMN artist_id INTEGER REFERENCES artists(id)',
+        );
+        await customStatement(
+          'ALTER TABLE tracks ADD COLUMN album_artist_id INTEGER REFERENCES artists(id)',
+        );
+        await transaction(() async {
+          await customStatement(
+            'UPDATE tracks SET artist_id = ('
+            '  SELECT id FROM artists WHERE artists.name = tracks.artist'
+            ')',
+          );
+          await customStatement(
+            'UPDATE tracks SET album_artist_id = ('
+            '  SELECT id FROM artists WHERE artists.name = tracks.album_artist'
+            ')',
+          );
+        });
       }
     },
   );

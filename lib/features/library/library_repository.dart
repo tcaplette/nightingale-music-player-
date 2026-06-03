@@ -25,8 +25,9 @@ abstract interface class LibraryRepository {
 
   Future<AlbumModel?> getAlbumById(int albumId);
 
-  Future<List<AlbumModel>> getAlbumsByArtist(String artist);
-  Future<List<TrackModel>> getTracksByArtist(String artist);
+  Future<List<AlbumModel>> getAlbumsByArtist(int artistId);
+  Future<List<TrackModel>> getTracksByArtist(int artistId);
+  Future<ArtistModel?> getArtistById(int artistId);
   Future<List<TrackModel>> getTracksByGenre(String genre);
 
   Future<({

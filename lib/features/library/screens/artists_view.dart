@@ -30,9 +30,7 @@ class ArtistsView extends ConsumerWidget {
             itemCount: artists.length,
             itemBuilder: (context, i) => _ArtistTile(
               artist: artists[i],
-              onTap: () => context.push(
-                '/library/artists/${Uri.encodeComponent(artists[i].name)}',
-              ),
+              onTap: () => context.push('/library/artists/${artists[i].id}'),
             ),
           ),
         );
