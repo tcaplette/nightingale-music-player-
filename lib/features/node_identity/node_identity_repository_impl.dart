@@ -28,22 +28,34 @@ class NodeIdentityRepositoryImpl implements NodeIdentityRepository {
   @override
   Future<void> generateIdentity({
     required String displayName,
+    required String username,
     required String lanIp,
     required int port,
   }) async {
     await crypto.generateKeyPair();
     final publicKeyPem = await crypto.getPublicKeyPem();
-    final username = _usernameFromDisplayName(displayName);
-    final actorUrl = 'http://$lanIp:$port/users/$username';
+    final safeUsername = _sanitizeUsername(username);
+    final actorUrl = 'http://$lanIp:$port/users/$safeUsername';
 
     await db.into(db.nodeIdentityTable).insert(
           NodeIdentityTableCompanion.insert(
             actorUrl: actorUrl,
             publicKeyPem: publicKeyPem,
-            preferredUsername: username,
+            preferredUsername: safeUsername,
             displayName: displayName,
           ),
         );
+  }
+
+  /// Sanitizes a username for use in URLs and ActivityPub identifiers.
+  /// Allows lowercase letters, digits, underscores, and hyphens only.
+  String _sanitizeUsername(String username) {
+    return username
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9_-]'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_+|_+$'), '');
   }
 
   @override
@@ -123,6 +135,4 @@ class NodeIdentityRepositoryImpl implements NodeIdentityRepository {
     );
   }
 
-  String _usernameFromDisplayName(String name) =>
-      name.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
 }

@@ -35,10 +35,12 @@ class NodeIdentityNotifier extends Notifier<NodeIdentityState> {
     }
   }
 
-  Future<void> createIdentity({required String displayName}) async {
+  Future<void> createIdentity({
+    required String displayName,
+    required String username,
+  }) async {
     final repo = sl<NodeIdentityRepository>();
 
-    // Resolve LAN IP — synchronous and fast.
     final lanResolver = sl<LocalAddressResolver>();
     final server = sl<FederationServer>();
     final port = server.currentPort ?? 7777;
@@ -46,6 +48,7 @@ class NodeIdentityNotifier extends Notifier<NodeIdentityState> {
 
     await repo.generateIdentity(
       displayName: displayName,
+      username: username,
       lanIp: lanIp,
       port: port,
     );

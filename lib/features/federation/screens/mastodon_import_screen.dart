@@ -114,13 +114,14 @@ class _MastodonImportScreenState extends ConsumerState<MastodonImportScreen> {
       appBar: AppBar(
         title: const Text('Connect Mastodon'),
         actions: [
-          TextButton(
-            onPressed: widget.onDone,
-            child: Text(
-              'Skip',
-              style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+          if (widget.onDone != null)
+            TextButton(
+              onPressed: widget.onDone,
+              child: Text(
+                'Skip',
+                style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+              ),
             ),
-          ),
         ],
       ),
       body: ListView(

@@ -16,12 +16,11 @@ void main() {
       ),
     );
     await tester.pump();
-    // Welcome step shows "nightingale" branding and a "Get started" button
     expect(find.text('nightingale'), findsOneWidget);
     expect(find.text('Get started'), findsOneWidget);
   });
 
-  testWidgets('Tapping Get started advances to identity step', (tester) async {
+  testWidgets('Tapping Get started advances to sign-in step', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp(
@@ -33,7 +32,6 @@ void main() {
     await tester.pump();
     await tester.tap(find.text('Get started'));
     await tester.pumpAndSettle();
-    // Identity step shows the name input prompt
-    expect(find.text('What should we call you?'), findsOneWidget);
+    expect(find.text('Sign in with Mastodon'), findsWidgets);
   });
 }

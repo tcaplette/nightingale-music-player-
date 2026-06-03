@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nightingale/core/di/service_locator.dart';
+import 'package:nightingale/core/logging/app_logger.dart';
 import 'package:nightingale/core/router/app_router.dart';
-import 'package:nightingale/features/federation/discovery/mastodon_bridge_service.dart';
+import 'package:nightingale/features/federation/discovery/mastodon_auth_webview.dart';
 import 'package:nightingale/features/federation/discovery/mastodon_oauth_service.dart';
-import 'package:nightingale/features/federation/screens/mastodon_import_screen.dart';
 import 'package:nightingale/features/node_identity/node_identity_notifier.dart';
 import 'package:nightingale/features/onboarding/mastodon_account_provider.dart';
 import 'package:nightingale/features/onboarding/onboarding_notifier.dart';
@@ -15,7 +15,7 @@ import 'package:nightingale/shared/components/inputs/app_text_input.dart';
 import 'package:nightingale/shared/theme/app_motion.dart';
 import 'package:nightingale/shared/theme/app_spacing.dart';
 
-enum _OnboardingStep { welcome, identity, mastodon, discovery, complete }
+enum _OnboardingStep { welcome, signIn, complete }
 
 class OnboardingShell extends ConsumerStatefulWidget {
   const OnboardingShell({super.key});
@@ -27,9 +27,7 @@ class OnboardingShell extends ConsumerStatefulWidget {
 class _OnboardingShellState extends ConsumerState<OnboardingShell> {
   _OnboardingStep _step = _OnboardingStep.welcome;
 
-  void _advance(_OnboardingStep next) {
-    setState(() => _step = next);
-  }
+  void _advance(_OnboardingStep next) => setState(() => _step = next);
 
   @override
   Widget build(BuildContext context) {
@@ -40,29 +38,17 @@ class _OnboardingShellState extends ConsumerState<OnboardingShell> {
       child: switch (_step) {
         _OnboardingStep.welcome => _WelcomeStep(
             key: const ValueKey('welcome'),
-            onNext: () => _advance(_OnboardingStep.identity),
+            onNext: () => _advance(_OnboardingStep.signIn),
           ),
-        _OnboardingStep.identity => _IdentityStep(
-            key: const ValueKey('identity'),
-            onNext: () => _advance(_OnboardingStep.mastodon),
-          ),
-        _OnboardingStep.mastodon => _MastodonStep(
-            key: const ValueKey('mastodon'),
-            onNext: () => _advance(_OnboardingStep.discovery),
-          ),
-        _OnboardingStep.discovery => _DiscoveryStep(
-            key: const ValueKey('discovery'),
+        _OnboardingStep.signIn => _SignInStep(
+            key: const ValueKey('signIn'),
             onNext: () => _advance(_OnboardingStep.complete),
           ),
         _OnboardingStep.complete => _CompleteStep(
             key: const ValueKey('complete'),
             onFinish: () async {
-              await ref
-                  .read(onboardingProvider.notifier)
-                  .completeOnboarding();
-              if (context.mounted) {
-                context.go(AppRoutes.library);
-              }
+              await ref.read(onboardingProvider.notifier).completeOnboarding();
+              if (context.mounted) context.go(AppRoutes.library);
             },
           ),
       },
@@ -109,49 +95,99 @@ class _WelcomeStep extends StatelessWidget {
   }
 }
 
-// ── Step 2: Identity setup ────────────────────────────────────────────────────
+// ── Step 2: Sign in with Mastodon (creates identity) ─────────────────────────
 
-class _IdentityStep extends ConsumerStatefulWidget {
-  const _IdentityStep({super.key, required this.onNext});
+class _SignInStep extends ConsumerStatefulWidget {
+  const _SignInStep({super.key, required this.onNext});
   final VoidCallback onNext;
 
   @override
-  ConsumerState<_IdentityStep> createState() => _IdentityStepState();
+  ConsumerState<_SignInStep> createState() => _SignInStepState();
 }
 
-class _IdentityStepState extends ConsumerState<_IdentityStep> {
-  final _nameController = TextEditingController();
+class _SignInStepState extends ConsumerState<_SignInStep> {
+  final _handleController = TextEditingController();
   bool _loading = false;
   String? _error;
+  bool _helpExpanded = false;
 
   @override
   void dispose() {
-    _nameController.dispose();
+    _handleController.dispose();
     super.dispose();
   }
 
-  Future<void> _submit() async {
-    final name = _nameController.text.trim();
-    if (name.isEmpty) {
-      setState(() => _error = 'Enter your name to get started.');
+  Future<void> _signIn() async {
+    final input = _handleController.text.trim();
+    if (input.isEmpty) {
+      setState(() => _error = 'Enter your Mastodon handle or server — e.g. @you@mastodon.social');
       return;
     }
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      await ref
-          .read(nodeIdentityProvider.notifier)
-          .createIdentity(displayName: name);
-      widget.onNext();
-    } catch (_) {
-      if (mounted) {
+    setState(() { _loading = true; _error = null; });
+
+    final oauthService = sl<MastodonOAuthService>();
+
+    AppLogger.debug('[onboarding] prepareSignIn for: $input', tag: 'onboarding_auth');
+    final prepared = await oauthService.prepareSignIn(input);
+    AppLogger.debug('[onboarding] prepareSignIn result: ${prepared == null ? "null (server unreachable)" : "OK, instance=${prepared.instance}"}', tag: 'onboarding_auth');
+
+    if (!mounted) return;
+
+    if (prepared == null) {
+      setState(() {
+        _loading = false;
+        _error = 'Could not reach that Mastodon server. Check your handle and try again.';
+      });
+      return;
+    }
+
+    AppLogger.debug('[onboarding] launching webview for authUrl: ${prepared.authUrl}', tag: 'onboarding_auth');
+    final callbackUrl = await MastodonAuthWebView.show(
+      context,
+      authUrl: prepared.authUrl,
+      callbackScheme: 'nightingale',
+    );
+    AppLogger.debug('[onboarding] webview returned callbackUrl: ${callbackUrl ?? "null (cancelled)"}', tag: 'onboarding_auth');
+
+    if (!mounted) return;
+
+    AppLogger.debug('[onboarding] calling completeSignIn…', tag: 'onboarding_auth');
+    final result = await oauthService.completeSignIn(prepared, callbackUrl);
+    AppLogger.debug('[onboarding] completeSignIn result: ${result.runtimeType}', tag: 'onboarding_auth');
+
+    if (!mounted) return;
+
+    switch (result) {
+      case OAuthSuccess(:final instance, :final accessToken):
+        AppLogger.debug('[onboarding] OAuthSuccess for $instance — fetching account details', tag: 'onboarding_auth');
+        final details = await oauthService.fetchAccountDetails(instance, accessToken);
+        AppLogger.debug('[onboarding] fetchAccountDetails: ${details == null ? "null" : "handle=${details.handle}"}', tag: 'onboarding_auth');
+        if (!mounted) return;
+        if (details == null) {
+          setState(() {
+            _loading = false;
+            _error = 'Signed in but could not fetch account details. Try again.';
+          });
+          return;
+        }
+        await ref.read(nodeIdentityProvider.notifier).createIdentity(
+              displayName: details.displayName,
+              username: details.username,
+            );
+        await sl<SecureStorageService>().setMastodonHandle(details.handle);
+        ref.invalidate(mastodonAccountProvider);
+        if (mounted) widget.onNext();
+
+      case OAuthCancelled():
+        AppLogger.debug('[onboarding] OAuthCancelled — resetting loading state', tag: 'onboarding_auth');
+        setState(() => _loading = false);
+
+      case OAuthFailed(:final reason):
+        AppLogger.debug('[onboarding] OAuthFailed: $reason', tag: 'onboarding_auth');
         setState(() {
-          _error = 'Something went wrong. Please try again.';
           _loading = false;
+          _error = reason;
         });
-      }
     }
   }
 
@@ -159,18 +195,20 @@ class _IdentityStepState extends ConsumerState<_IdentityStep> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
+      // Scaffold shrinks body when keyboard appears; SingleChildScrollView handles the rest.
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(AppSpacing.xl),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Spacer(),
-              Text('What should we call you?', style: theme.textTheme.displayLarge),
+              const SizedBox(height: AppSpacing.xxl),
+              Text('Connect your Mastodon', style: theme.textTheme.displayLarge),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                'This is how others will see you.',
-                style: theme.textTheme.bodyMedium?.copyWith(
+                'Nightingale uses your Mastodon account to find and follow people you know.',
+                style: theme.textTheme.bodyLarge?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
@@ -189,18 +227,15 @@ class _IdentityStepState extends ConsumerState<_IdentityStep> {
                         ),
                       ),
                       const SizedBox(width: AppSpacing.md),
-                      Text(
-                        'Setting up your space…',
-                        style: theme.textTheme.bodyMedium,
-                      ),
+                      Text('Connecting to Mastodon…', style: theme.textTheme.bodyMedium),
                     ],
                   ),
                 )
               else
                 AppTextInput(
-                  label: 'Your name',
-                  hint: 'Your name',
-                  controller: _nameController,
+                  label: 'Mastodon handle',
+                  hint: '@you@mastodon.social',
+                  controller: _handleController,
                   onChanged: (_) {
                     if (_error != null) setState(() => _error = null);
                   },
@@ -209,191 +244,91 @@ class _IdentityStepState extends ConsumerState<_IdentityStep> {
                 const SizedBox(height: AppSpacing.sm),
                 Text(
                   _error!,
-                  style: TextStyle(
-                    color: theme.colorScheme.error,
-                    fontSize: 13,
-                  ),
+                  style: TextStyle(color: theme.colorScheme.error, fontSize: 13),
                 ),
               ],
-              const SizedBox(height: AppSpacing.lg),
-              if (!_loading)
-                SizedBox(
-                  width: double.infinity,
-                  child: AppButton(label: 'Continue', onPressed: _submit),
-                ),
-              const Spacer(flex: 2),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ── Step 3: Mastodon sign-in ──────────────────────────────────────────────────
-
-class _MastodonStep extends ConsumerStatefulWidget {
-  const _MastodonStep({super.key, required this.onNext});
-  final VoidCallback onNext;
-
-  @override
-  ConsumerState<_MastodonStep> createState() => _MastodonStepState();
-}
-
-class _MastodonStepState extends ConsumerState<_MastodonStep> {
-  final _instanceController = TextEditingController();
-  final _passwordController = TextEditingController();
-  bool _loading = false;
-  String? _error;
-  String? _connectedAs;
-
-  @override
-  void dispose() {
-    _instanceController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _signIn() async {
-    final handle = _instanceController.text.trim();
-    final password = _passwordController.text;
-    if (handle.isEmpty) {
-      setState(() => _error = 'Enter your Mastodon account to continue.');
-      return;
-    }
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    final result = await sl<MastodonOAuthService>().signIn(
-      handle,
-      password: password.isNotEmpty ? password : null,
-    );
-    if (!mounted) return;
-    switch (result) {
-      case OAuthSuccess(:final instance, :final accessToken):
-        // Fetch the account handle so we can store it for display elsewhere.
-        final handle = await _fetchHandle(instance, accessToken);
-        if (handle != null) {
-          await sl<SecureStorageService>().setMastodonHandle(handle);
-          ref.invalidate(mastodonAccountProvider);
-        }
-        setState(() {
-          _loading = false;
-          _connectedAs = handle ?? instance;
-        });
-        // Brief pause so the user sees the confirmation, then advance.
-        await Future.delayed(const Duration(milliseconds: 800));
-        if (mounted) widget.onNext();
-      case OAuthCancelled():
-        setState(() => _loading = false);
-      case OAuthFailed(:final reason):
-        setState(() {
-          _loading = false;
-          _error = reason;
-        });
-    }
-  }
-
-  Future<String?> _fetchHandle(String instance, String accessToken) async {
-    try {
-      final response = await (sl<MastodonOAuthService>())
-          .fetchAccountHandle(instance, accessToken);
-      return response;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Scaffold(
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xl),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Spacer(),
-              Text(
-                'Bring your network with you',
-                style: theme.textTheme.displayLarge,
-              ),
               const SizedBox(height: AppSpacing.sm),
-              Text(
-                'Sign in with Mastodon to see which of your connections are already on Nightingale.',
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              if (_connectedAs != null) ...[
-                Row(
+              // "What's my handle?" inline explainer
+              GestureDetector(
+                onTap: () => setState(() => _helpExpanded = !_helpExpanded),
+                child: Row(
                   children: [
-                    Icon(Icons.check_circle,
-                        color: theme.colorScheme.primary, size: 20),
-                    const SizedBox(width: AppSpacing.sm),
                     Text(
-                      'Connected as $_connectedAs',
-                      style: theme.textTheme.bodyMedium?.copyWith(
+                      "What's my handle?",
+                      style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.primary,
+                        decoration: TextDecoration.underline,
                       ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      _helpExpanded ? Icons.expand_less : Icons.expand_more,
+                      size: 16,
+                      color: theme.colorScheme.primary,
                     ),
                   ],
                 ),
-              ] else ...[
-                AppTextInput(
-                  label: 'Mastodon account',
-                  hint: '@you@mastodon.social',
-                  controller: _instanceController,
-                  onChanged: (_) {
-                    if (_error != null) setState(() => _error = null);
-                  },
-                ),
-                const SizedBox(height: AppSpacing.md),
-                AppTextInput(
-                  label: 'Password',
-                  hint: 'Your Mastodon password',
-                  controller: _passwordController,
-                  obscureText: true,
-                  onChanged: (_) {
-                    if (_error != null) setState(() => _error = null);
-                  },
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: AppSpacing.sm),
-                  Text(
-                    _error!,
-                    style: TextStyle(
-                      color: theme.colorScheme.error,
-                      fontSize: 13,
-                    ),
+              ),
+              if (_helpExpanded) ...[
+                const SizedBox(height: AppSpacing.sm),
+                Container(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                ],
-                const SizedBox(height: AppSpacing.lg),
-                SizedBox(
-                  width: double.infinity,
-                  child: AppButton(
-                    label: _loading ? 'Signing in…' : 'Sign in with Mastodon',
-                    onPressed: _loading ? null : _signIn,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Your Mastodon handle has two parts:',
+                        style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 6),
+                      RichText(
+                        text: TextSpan(
+                          style: theme.textTheme.bodySmall,
+                          children: [
+                            TextSpan(
+                              text: '@username',
+                              style: TextStyle(
+                                color: theme.colorScheme.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const TextSpan(text: ' — your name on your server\n'),
+                            TextSpan(
+                              text: '@server.com',
+                              style: TextStyle(
+                                color: theme.colorScheme.tertiary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const TextSpan(text: ' — the server you signed up on'),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Example: @alice@mastodon.social\n\nNot sure which server? Check your Mastodon app — it\'s shown on your profile.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
-              const SizedBox(height: AppSpacing.md),
+              const SizedBox(height: AppSpacing.xl),
               if (!_loading)
-                Center(
-                  child: TextButton(
-                    onPressed: widget.onNext,
-                    child: Text(
-                      'Skip for now',
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
+                SizedBox(
+                  width: double.infinity,
+                  child: AppButton(
+                    label: 'Continue',
+                    onPressed: _signIn,
                   ),
                 ),
-              const Spacer(flex: 2),
+              const SizedBox(height: AppSpacing.xl),
             ],
           ),
         ),
@@ -402,116 +337,7 @@ class _MastodonStepState extends ConsumerState<_MastodonStep> {
   }
 }
 
-// ── Step 4: Discovery ─────────────────────────────────────────────────────────
-
-class _DiscoveryStep extends ConsumerWidget {
-  const _DiscoveryStep({super.key, required this.onNext});
-  final VoidCallback onNext;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final storedHandle = ref.watch(mastodonAccountProvider).valueOrNull;
-    return DiscoveryOnboardingStep(
-      onNext: onNext,
-      initialMastodonHandle: storedHandle,
-    );
-  }
-}
-
-/// The post-identity discovery step — offered once during onboarding and also
-/// accessible any time from the Find People screen.
-///
-/// Extracted as a public widget so it can be unit/widget tested independently.
-class DiscoveryOnboardingStep extends StatefulWidget {
-  const DiscoveryOnboardingStep({
-    super.key,
-    required this.onNext,
-    this.initialMastodonHandle,
-  });
-  final VoidCallback onNext;
-  final String? initialMastodonHandle;
-
-  @override
-  State<DiscoveryOnboardingStep> createState() =>
-      _DiscoveryOnboardingStepState();
-}
-
-class _DiscoveryOnboardingStepState extends State<DiscoveryOnboardingStep> {
-  bool _showMastodonImport = false;
-
-  Future<void> _markShownAndAdvance() async {
-    await sl<SecureStorageService>().setDiscoveryShown(true);
-    widget.onNext();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_showMastodonImport) {
-      return MastodonImportScreen(
-        key: const ValueKey('mastodon_import'),
-        initialHandle: widget.initialMastodonHandle,
-        onDone: _markShownAndAdvance,
-      );
-    }
-
-    final theme = Theme.of(context);
-    return Scaffold(
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xl),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Spacer(),
-              Text(
-                'Find your people',
-                style: theme.textTheme.displayLarge,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                'Connect with friends already on Nightingale or bring your Mastodon network with you.',
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const Spacer(flex: 2),
-              SizedBox(
-                width: double.infinity,
-                child: AppButton(
-                  label: 'Connect Mastodon',
-                  onPressed: () => setState(() => _showMastodonImport = true),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: () => context.push(AppRoutes.findPeople),
-                  child: const Text('Find by username'),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Center(
-                child: TextButton(
-                  onPressed: _markShownAndAdvance,
-                  child: Text(
-                    'Skip for now',
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ── Step 5: Completion ────────────────────────────────────────────────────────
+// ── Step 3: Complete ──────────────────────────────────────────────────────────
 
 class _CompleteStep extends StatelessWidget {
   const _CompleteStep({super.key, required this.onFinish});
@@ -547,5 +373,31 @@ class _CompleteStep extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// ── Public: Discovery step (still used standalone from Find People) ───────────
+
+class DiscoveryOnboardingStep extends StatefulWidget {
+  const DiscoveryOnboardingStep({
+    super.key,
+    required this.onNext,
+    this.initialMastodonHandle,
+  });
+  final VoidCallback onNext;
+  final String? initialMastodonHandle;
+
+  @override
+  State<DiscoveryOnboardingStep> createState() =>
+      _DiscoveryOnboardingStepState();
+}
+
+class _DiscoveryOnboardingStepState extends State<DiscoveryOnboardingStep> {
+  @override
+  Widget build(BuildContext context) {
+    // No longer used in onboarding — Find People handles discovery.
+    // Kept as a no-op for any remaining call sites during transition.
+    WidgetsBinding.instance.addPostFrameCallback((_) => widget.onNext());
+    return const SizedBox.shrink();
   }
 }

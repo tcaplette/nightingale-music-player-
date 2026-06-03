@@ -6,6 +6,7 @@ abstract class NodeIdentityRepository {
   Future<bool> hasIdentity();
   Future<void> generateIdentity({
     required String displayName,
+    required String username,
     required String lanIp,
     required int port,
   });

@@ -160,9 +160,7 @@ class _FakeIdentityRepo implements NodeIdentityRepository {
   Future<bool> hasIdentity() async => true;
 
   @override
-  Future<void> generateIdentity({
-    required String displayName,
-    required String lanIp,
+  Future<void> generateIdentity({required String displayName, required String username, required String lanIp,
     required int port,
   }) async {}
 

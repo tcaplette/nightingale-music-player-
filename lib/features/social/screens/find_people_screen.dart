@@ -4,10 +4,10 @@ import 'package:go_router/go_router.dart';
 import 'package:nightingale/core/activitypub/models/ap_actor.dart';
 import 'package:nightingale/core/di/service_locator.dart';
 import 'package:nightingale/core/federation/actor_resolver.dart';
+import 'package:nightingale/features/federation/discovery/mastodon_auth_webview.dart';
 import 'package:nightingale/features/federation/discovery/mastodon_bridge_service.dart';
 import 'package:nightingale/features/federation/discovery/mastodon_oauth_service.dart';
 import 'package:nightingale/features/federation/discovery/peer_discovery_service.dart';
-import 'package:nightingale/features/onboarding/mastodon_account_provider.dart';
 import 'package:nightingale/features/onboarding/secure_storage_service.dart';
 import 'package:nightingale/features/social/providers/social_graph_notifier.dart';
 import 'package:nightingale/shared/components/identity/person_display.dart';
@@ -54,7 +54,6 @@ class FindPeopleScreen extends ConsumerStatefulWidget {
 class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
   final _searchController = TextEditingController();
   final _instanceController = TextEditingController();
-  final _passwordController = TextEditingController();
   _LookupState _lookupState = _LookupIdle();
   _ImportState _importState = _ImportIdle();
 
@@ -68,7 +67,6 @@ class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
   void dispose() {
     _searchController.dispose();
     _instanceController.dispose();
-    _passwordController.dispose();
     super.dispose();
   }
 
@@ -103,17 +101,31 @@ class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
 
   Future<void> _signInWithMastodon() async {
     final handle = _instanceController.text.trim();
-    final password = _passwordController.text;
     if (handle.isEmpty) {
       setState(() => _importState = _ImportFailed('Enter your Mastodon account first.'));
       return;
     }
     setState(() => _importState = _ImportLoading());
-    final result = await sl<MastodonOAuthService>().signIn(
-      handle,
-      password: password.isNotEmpty ? password : null,
+
+    final oauthService = sl<MastodonOAuthService>();
+    final prepared = await oauthService.prepareSignIn(handle);
+    if (!mounted) return;
+
+    if (prepared == null) {
+      setState(() => _importState = _ImportFailed('Could not reach that Mastodon server. Check your handle and try again.'));
+      return;
+    }
+
+    final callbackUrl = await MastodonAuthWebView.show(
+      context,
+      authUrl: prepared.authUrl,
+      callbackScheme: 'nightingale',
     );
     if (!mounted) return;
+
+    final result = await oauthService.completeSignIn(prepared, callbackUrl);
+    if (!mounted) return;
+
     switch (result) {
       case OAuthSuccess(:final accessToken, :final instance):
         await _runImport(instance, accessToken);
@@ -201,17 +213,8 @@ class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
           TextField(
             controller: _instanceController,
             decoration: const InputDecoration(
-              labelText: 'Mastodon account',
+              labelText: 'Mastodon handle',
               hintText: '@you@mastodon.social',
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          TextField(
-            controller: _passwordController,
-            obscureText: true,
-            decoration: const InputDecoration(
-              labelText: 'Password',
-              hintText: 'Your Mastodon password',
             ),
           ),
           const SizedBox(height: AppSpacing.sm),

@@ -64,8 +64,9 @@ dependencies:
   # Federation — battery state for seeding power policy
   battery_plus: ^6.0.3
 
-  # OAuth — system browser auth flow for Mastodon sign-in
+  # OAuth — in-app WebView auth flow for Mastodon sign-in
   flutter_web_auth_2: ^4.0.0
+  webview_flutter: ^4.10.0
 
   # Account portability — QR code display for migration token
   qr_flutter: ^4.1.0
