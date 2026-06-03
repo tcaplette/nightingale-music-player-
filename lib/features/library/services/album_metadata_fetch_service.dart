@@ -2,12 +2,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 import 'package:metadata_god/metadata_god.dart' as mg;
 import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
 import 'package:nightingale/features/library/models/album_model.dart';
 import 'package:nightingale/features/library/models/track_model.dart';
+import 'package:nightingale/features/library/services/id3_tag_initializer.dart';
 import 'package:nightingale/features/library/services/metadata_lookup_service.dart';
 
 const _tag = 'album_batch_fetch';
@@ -163,6 +165,14 @@ class AlbumMetadataFetchService {
       );
     }
 
+    debugPrint(
+      '[$_tag] Release found via ${albumResult.source}: '
+      '"${albumResult.albumName}" by ${albumResult.artist} — '
+      '${albumResult.tracks.length} MB tracks, year=${albumResult.releaseYear}, '
+      'genre=${albumResult.genre}, '
+      'artwork=${albumResult.artworkUrl != null ? "yes" : "none"}',
+    );
+
     // 2. Use preloaded artwork from preview if available; otherwise download.
     // Reusing the preview artwork avoids a second Cover Art Archive round-trip
     // (which can fail or return a different result).
@@ -185,12 +195,30 @@ class AlbumMetadataFetchService {
 
     // 4. Match and apply per track
     if (albumResult.tracks.isNotEmpty) {
+      debugPrint('[$_tag] Local tracks (${tracks.length}):');
+      for (final t in tracks) {
+        debugPrint('[$_tag]   local: #${t.trackNumber ?? "?"} "${t.title}" ${t.durationMs}ms');
+      }
+      debugPrint('[$_tag] MB tracks (${albumResult.tracks.length}):');
+      for (final t in albumResult.tracks) {
+        debugPrint('[$_tag]   mb:    #${t.trackNumber} "${t.title}" ${t.durationMs}ms');
+      }
+
       final (matchMap, unmatchedList) =
           _matchTracks(tracks, albumResult.tracks);
+
+      debugPrint('[$_tag] Matching result: ${matchMap.length} matched, ${unmatchedList.length} unmatched');
+      for (final entry in matchMap.entries) {
+        debugPrint('[$_tag]   ✓ "${entry.key.title}" → "${entry.value.title}"');
+      }
+      for (final t in unmatchedList) {
+        debugPrint('[$_tag]   ✗ "${t.title}" — no match found');
+      }
       unmatched.addAll(unmatchedList);
 
       for (final entry in matchMap.entries) {
         final track = entry.key;
+        final mbTrack = entry.value;
         try {
           await _writeFields(
             track: track,
@@ -199,6 +227,8 @@ class AlbumMetadataFetchService {
             newArtworkPath: artworkPath,
             resolvedAlbumName: resolvedName,
             resolvedAlbumArtist: resolvedArtist,
+            newTrackNumber: mbTrack.trackNumber,
+            newDiscNumber: mbTrack.discNumber,
           );
           matched.add(track);
         } catch (e) {
@@ -228,6 +258,7 @@ class AlbumMetadataFetchService {
       }
     } else {
       // No MusicBrainz track listing — apply album-level fields to all tracks
+      debugPrint('[$_tag] No MB track listing — applying album-level fields to all ${tracks.length} tracks');
       for (final track in tracks) {
         try {
           await _writeFields(
@@ -238,11 +269,14 @@ class AlbumMetadataFetchService {
             resolvedAlbumName: resolvedName,
             resolvedAlbumArtist: resolvedArtist,
           );
+          debugPrint('[$_tag]   ✓ wrote fields for "${track.title}"');
           matched.add(track);
-        } catch (e) {
+        } catch (e, st) {
+          debugPrint('[$_tag]   ✗ _writeFields threw for "${track.title}": $e\n$st');
           errors[track] = e.toString();
         }
       }
+      debugPrint('[$_tag] Else-branch done: ${matched.length} matched, ${errors.length} errors');
     }
 
     return AlbumFetchResult(
@@ -322,8 +356,16 @@ class AlbumMetadataFetchService {
         genre = sorted.first['name'] as String?;
       }
 
-      // Track listing from media
-      final mbTracks = _extractTrackListing(release);
+      // Track listing from search result — the search API sometimes omits
+      // recordings even with inc=recordings. If empty, fetch the full release.
+      var mbTracks = _extractTrackListing(release);
+      if (mbTracks.isEmpty && mbid != null) {
+        mbTracks = await _fetchFullTrackListing(mbid) ?? [];
+        AppLogger.debug(
+          'Full release lookup for $mbid returned ${mbTracks.length} tracks',
+          tag: _tag,
+        );
+      }
 
       // Artwork from Cover Art Archive
       String? artworkUrl;
@@ -456,6 +498,32 @@ class AlbumMetadataFetchService {
     return result;
   }
 
+  /// Fetches the full release from MusicBrainz by MBID and returns its track
+  /// listing. Used as a fallback when the search result omits recordings.
+  Future<List<MbTrackEntry>?> _fetchFullTrackListing(String mbid) async {
+    try {
+      await Future.delayed(const Duration(milliseconds: 1100));
+      final uri = Uri.parse(
+        'https://musicbrainz.org/ws/2/release/$mbid?inc=recordings&fmt=json',
+      );
+      final response = await http
+          .get(uri, headers: {'User-Agent': _userAgent})
+          .timeout(_timeout);
+      if (response.statusCode != 200) {
+        AppLogger.warning(
+          'MusicBrainz full release fetch ${response.statusCode} for $mbid',
+          tag: _tag,
+        );
+        return null;
+      }
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return _extractTrackListing(data);
+    } catch (e) {
+      AppLogger.warning('Full release fetch error for $mbid: $e', tag: _tag);
+      return null;
+    }
+  }
+
   Future<String?> _fetchReleaseArtwork(String mbid) async {
     try {
       // MusicBrainz recommends a 1-second delay between requests
@@ -544,7 +612,9 @@ class AlbumMetadataFetchService {
     t = t.replaceAll(RegExp(r'\(ft\.?[^)]*\)', caseSensitive: false), '');
     t = t.replaceAll(RegExp(r'\bfeat\.?\s+\S+', caseSensitive: false), '');
     t = t.replaceAll(RegExp(r'\bft\.?\s+\S+', caseSensitive: false), '');
-    t = t.replaceAll(RegExp(r'[^\w\s]'), '').trim();
+    // unicode: true keeps accented letters (é, ü, ñ …) so "Beyoncé" and
+    // "Beyonce" don't silently collapse to different strings.
+    t = t.replaceAll(RegExp(r'[^\w\s]', unicode: true), '').trim();
     t = t.replaceAll(RegExp(r'\s+'), ' ');
     return t;
   }
@@ -555,13 +625,38 @@ class AlbumMetadataFetchService {
         local.trackNumber == candidate.trackNumber) {
       score += 3;
     }
-    if ((local.durationMs - candidate.durationMs).abs() <= 4000) {
+    // Skip duration scoring when MusicBrainz has no duration (returns 0).
+    // 10 s tolerance handles YouTube rips, different editions, and pre-gap variance.
+    if (candidate.durationMs > 0 &&
+        (local.durationMs - candidate.durationMs).abs() <= 10000) {
       score += 2;
     }
-    if (_normalizeTitle(local.title) == _normalizeTitle(candidate.title)) {
-      score += 1;
+    // Substring match handles "Artist - 'Song Title' (Full Album Stream)" patterns
+    // where the MB title is a clean substring of the YouTube-style local title.
+    final localNorm = _normalizeTitle(local.title);
+    final candNorm = _normalizeTitle(candidate.title);
+    if (localNorm.contains(candNorm) || candNorm.contains(localNorm)) {
+      score += 2;
     }
     return score;
+  }
+
+  static void _logScores(TrackModel local, List<MbTrackEntry> candidates) {
+    debugPrint('[$_tag]   scoring "${local.title}" (#${local.trackNumber ?? "?"} ${local.durationMs}ms):');
+    for (final c in candidates) {
+      final trackPts = (local.trackNumber != null && local.trackNumber == c.trackNumber) ? 3 : 0;
+      final durDiff = c.durationMs > 0 ? (local.durationMs - c.durationMs).abs() : -1;
+      final durPts = (c.durationMs > 0 && durDiff <= 10000) ? 2 : 0;
+      final localNorm = _normalizeTitle(local.title);
+      final candNorm = _normalizeTitle(c.title);
+      final titlePts = (localNorm.contains(candNorm) || candNorm.contains(localNorm)) ? 2 : 0;
+      final total = trackPts + durPts + titlePts;
+      debugPrint(
+        '[$_tag]     vs "#${c.trackNumber} ${c.title}" (${c.durationMs}ms) '
+        '→ trackNum=$trackPts dur=$durPts(diff=${durDiff}ms) title=$titlePts '
+        '[local_norm="$localNorm" mb_norm="$candNorm"] total=$total',
+      );
+    }
   }
 
   static (Map<TrackModel, MbTrackEntry>, List<TrackModel>) _matchTracks(
@@ -569,12 +664,15 @@ class AlbumMetadataFetchService {
     List<MbTrackEntry> mbTracks,
   ) {
     final matched = <TrackModel, MbTrackEntry>{};
-    final unmatched = <TrackModel>[];
+    final stillUnmatched = <TrackModel>[];
 
+    // Pass 1: score-based matching (duration + title ≥ 3)
     for (final track in tracks) {
       var bestScore = 0;
       MbTrackEntry? bestCandidate;
       var tie = false;
+
+      _logScores(track, mbTracks);
 
       for (final candidate in mbTracks) {
         final score = _scoreMatch(track, candidate);
@@ -587,14 +685,46 @@ class AlbumMetadataFetchService {
         }
       }
 
+      debugPrint(
+        '[$_tag]   → bestScore=$bestScore tie=$tie '
+        '${bestScore >= 3 && !tie ? "MATCHED to \"${bestCandidate?.title}\"" : "UNMATCHED (pass 1)"}',
+      );
+
       if (bestScore >= 3 && !tie && bestCandidate != null) {
         matched[track] = bestCandidate;
       } else {
-        unmatched.add(track);
+        stillUnmatched.add(track);
       }
     }
 
-    return (matched, unmatched);
+    // Pass 2: title-only fallback for anything that didn't score high enough.
+    // If exactly one unclaimed MB track's title is a substring of (or contains)
+    // the local title, assign it — this handles YouTube rips where duration
+    // varies but the title is unambiguous.
+    final claimedMb = matched.values.toSet();
+    final finalUnmatched = <TrackModel>[];
+
+    for (final track in stillUnmatched) {
+      final localNorm = _normalizeTitle(track.title);
+      final candidates = mbTracks
+          .where((c) => !claimedMb.contains(c))
+          .where((c) {
+            final cn = _normalizeTitle(c.title);
+            return localNorm.contains(cn) || cn.contains(localNorm);
+          })
+          .toList();
+
+      if (candidates.length == 1) {
+        matched[track] = candidates.first;
+        claimedMb.add(candidates.first);
+        debugPrint('[$_tag]   → pass 2 MATCHED "${track.title}" → "${candidates.first.title}"');
+      } else {
+        finalUnmatched.add(track);
+        debugPrint('[$_tag]   → pass 2 UNMATCHED "${track.title}" (${candidates.length} title candidates)');
+      }
+    }
+
+    return (matched, finalUnmatched);
   }
 
   // ── Write ─────────────────────────────────────────────────────────────────
@@ -606,89 +736,74 @@ class AlbumMetadataFetchService {
     required String? newArtworkPath,
     String? resolvedAlbumName,
     String? resolvedAlbumArtist,
+    int? newTrackNumber,
+    int? newDiscNumber,
   }) async {
-    // Read current file tags — these are authoritative. DB values can be stale
-    // (e.g. artist missing from DB but present in the file). Writing DB values
-    // back without checking first would erase correct file data.
-    mg.Metadata? fileTags;
-    try {
-      fileTags = await mg.MetadataGod.getMetadata(track.filePath);
-    } catch (e) {
-      AppLogger.warning(
-        'Could not read file tags for "${track.title}" — using DB values: $e',
-        tag: _tag,
-      );
-    }
+    final effectiveArtist = _isUnknown(track.artist)
+        ? (resolvedAlbumArtist ?? track.artist)
+        : track.artist;
+    final effectiveAlbum = resolvedAlbumName ?? track.albumName;
+    final effectiveAlbumArtist =
+        resolvedAlbumArtist ?? track.albumArtist ?? track.artist;
+    final effectiveGenre = _isEmpty(track.genre) ? newGenre : track.genre;
+    final effectiveYear = track.releaseYear ?? newYear;
+    final effectiveArtworkPath = newArtworkPath ?? track.artworkPath;
+    final effectiveTrackNumber = newTrackNumber ?? track.trackNumber;
+    final effectiveDiscNumber = newDiscNumber ?? track.discNumber;
 
-    // Baseline for fields we are NOT changing.
-    // title: prefer file tag > DB.
-    // artist: fill from resolved album artist if the track's value is unknown/empty.
-    // album/albumArtist: always use resolved batch values so file and DB stay in sync.
-    final baseTitle = _coalesce(fileTags?.title, track.title);
-    final rawArtist = _coalesce(fileTags?.artist, track.artist);
-    final baseArtist = _isUnknown(rawArtist)
-        ? (resolvedAlbumArtist ?? rawArtist)
-        : rawArtist;
-    final baseAlbum = resolvedAlbumName ??
-        _coalesce(fileTags?.album, track.albumName);
-    final baseAlbumArtist = resolvedAlbumArtist ??
-        _coalesce(fileTags?.albumArtist, track.albumArtist, track.artist);
-
-    // For the fields we are filling: check the FILE for emptiness, not the DB.
-    final fileGenre = fileTags?.genre;
-    final fileYear = fileTags?.year;
-    final hasFileArtwork = fileTags?.picture != null;
-
-    final effectiveGenre = _isEmpty(fileGenre) ? newGenre : fileGenre;
-    final effectiveYear = (fileYear == null) ? newYear : fileYear;
-    final effectiveArtworkPath =
-        (!hasFileArtwork && _isEmpty(track.artworkPath))
-            ? newArtworkPath
-            : track.artworkPath;
-
-    // Nothing to do
-    if (baseArtist == rawArtist &&
-        effectiveGenre == fileGenre &&
-        effectiveYear == fileYear &&
-        effectiveArtworkPath == track.artworkPath) { return; }
-
-    // Artwork to embed: new if we're adding it, otherwise preserve what's in the file
     mg.Image? picture;
-    if (newArtworkPath != null && !hasFileArtwork) {
+    if (newArtworkPath != null) {
       try {
         final bytes = await File(newArtworkPath).readAsBytes();
         picture = mg.Image(data: bytes, mimeType: 'image/jpeg');
       } catch (e) {
         AppLogger.warning(
-          'Could not read new artwork for "${track.title}": $e',
+          'Could not read artwork for "${track.title}": $e',
           tag: _tag,
         );
-        picture = fileTags?.picture;
       }
-    } else {
-      picture = fileTags?.picture; // preserve existing embedded art
     }
 
-    await mg.MetadataGod.writeMetadata(
-      track.filePath,
-      mg.Metadata(
-        title: baseTitle,
-        artist: baseArtist,
-        album: baseAlbum,
-        albumArtist: baseAlbumArtist,
-        genre: effectiveGenre,
-        year: effectiveYear,
-        picture: picture,
-      ),
+    final metadata = mg.Metadata(
+      title: track.title,
+      artist: effectiveArtist,
+      album: effectiveAlbum,
+      albumArtist: effectiveAlbumArtist,
+      genre: effectiveGenre,
+      year: effectiveYear,
+      trackNumber: effectiveTrackNumber,
+      discNumber: effectiveDiscNumber,
+      picture: picture,
     );
 
-    // Update DB only after successful file write
+    try {
+      await mg.MetadataGod.writeMetadata(track.filePath, metadata);
+    } catch (e) {
+      final msg = e.toString();
+      if (msg.contains('NoTag')) {
+        // File has no ID3 container — stamp a minimal header and retry.
+        try {
+          await stampId3Header(track.filePath);
+          await mg.MetadataGod.writeMetadata(track.filePath, metadata);
+          debugPrint('[$_tag] Created ID3 tag for "${track.title}"');
+        } catch (e2) {
+          AppLogger.warning('Tag write failed after stamp for "${track.title}": $e2', tag: _tag);
+          debugPrint('[$_tag] Tag write failed after stamp for "${track.title}": $e2');
+        }
+      } else {
+        AppLogger.warning('File tag write failed for "${track.title}": $e', tag: _tag);
+        debugPrint('[$_tag] File tag write failed for "${track.title}": $e');
+      }
+    }
+
     await _db.trackDao.updateTrack(
       track.toUpdateCompanion().copyWith(
-        artist: Value(baseArtist ?? track.artist),
+        artist: Value(effectiveArtist),
         genre: Value(effectiveGenre),
         releaseYear: Value(effectiveYear),
         artworkPath: Value(effectiveArtworkPath),
+        trackNumber: Value(effectiveTrackNumber),
+        discNumber: Value(effectiveDiscNumber),
       ),
     );
   }
@@ -700,8 +815,8 @@ class AlbumMetadataFetchService {
     required String resolvedName,
     required String resolvedArtist,
   }) async {
-    final effectiveArtwork =
-        _isEmpty(album.artworkPath) ? artworkPath : album.artworkPath;
+    // Prefer freshly fetched artwork over whatever the scanner extracted.
+    final effectiveArtwork = artworkPath ?? album.artworkPath;
     final effectiveYear = album.releaseYear ?? result.releaseYear;
 
     // If the user left the artist as an "unknown" placeholder, use the artist
@@ -740,14 +855,6 @@ class AlbumMetadataFetchService {
         lower == 'unknown artist' ||
         lower == 'unknown album' ||
         lower == 'various artists';
-  }
-
-  /// Returns the first non-empty value from the given candidates.
-  static String? _coalesce(String? a, [String? b, String? c]) {
-    if (!_isEmpty(a)) return a;
-    if (!_isEmpty(b)) return b;
-    if (!_isEmpty(c)) return c;
-    return null;
   }
 
   static int? _parseYear(String? dateStr) {

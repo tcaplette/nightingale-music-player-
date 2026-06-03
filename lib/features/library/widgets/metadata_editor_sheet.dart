@@ -7,6 +7,7 @@ import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/core/di/service_locator.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
 import 'package:nightingale/features/library/models/track_model.dart';
+import 'package:nightingale/features/library/services/id3_tag_initializer.dart';
 import 'package:nightingale/features/library/services/metadata_lookup_service.dart';
 import 'package:nightingale/features/library/services/metadata_validator.dart';
 import 'package:nightingale/shared/theme/app_spacing.dart';
@@ -258,19 +259,18 @@ class _MetadataEditorSheetState extends State<_MetadataEditorSheet> {
       }
     }
 
+    final metadata = mg.Metadata(
+      title: title.isEmpty ? null : title,
+      artist: artist.isEmpty ? null : artist,
+      album: album.isEmpty ? null : album,
+      albumArtist: albumArtist.isEmpty ? null : albumArtist,
+      genre: genre.isEmpty ? null : genre,
+      year: year,
+      picture: picture,
+    );
+
     try {
-      await mg.MetadataGod.writeMetadata(
-        widget.track.filePath,
-        mg.Metadata(
-          title: title.isEmpty ? null : title,
-          artist: artist.isEmpty ? null : artist,
-          album: album.isEmpty ? null : album,
-          albumArtist: albumArtist.isEmpty ? null : albumArtist,
-          genre: genre.isEmpty ? null : genre,
-          year: year,
-          picture: picture,
-        ),
-      );
+      await mg.MetadataGod.writeMetadata(widget.track.filePath, metadata);
     } on FileSystemException catch (e) {
       AppLogger.warning('Tag write failed (filesystem): $e', tag: _tag);
       setState(() {
@@ -279,12 +279,28 @@ class _MetadataEditorSheetState extends State<_MetadataEditorSheet> {
       });
       return;
     } catch (e) {
-      AppLogger.warning('Tag write failed: $e', tag: _tag);
-      setState(() {
-        _saving = false;
-        _errorMessage = 'Failed to write tags: $e';
-      });
-      return;
+      final msg = e.toString();
+      if (msg.contains('NoTag')) {
+        // File has no ID3 container — stamp a minimal header and retry.
+        try {
+          await stampId3Header(widget.track.filePath);
+          await mg.MetadataGod.writeMetadata(widget.track.filePath, metadata);
+        } catch (e2) {
+          AppLogger.warning('Tag write failed after stamp: $e2', tag: _tag);
+          setState(() {
+            _saving = false;
+            _errorMessage = 'Failed to write tags: $e2';
+          });
+          return;
+        }
+      } else {
+        AppLogger.warning('Tag write failed: $e', tag: _tag);
+        setState(() {
+          _saving = false;
+          _errorMessage = 'Failed to write tags: $e';
+        });
+        return;
+      }
     }
 
     // File write succeeded — update the database

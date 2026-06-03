@@ -96,6 +96,10 @@ class LibraryRepositoryImpl implements LibraryRepository {
       }
       scannedPaths.add(path);
 
+      // Skip tracks already in the DB. Preserves user-edited metadata fields
+      // (releaseYear, genre, etc.) that would otherwise be wiped by an upsert.
+      if (existingPaths.contains(path)) continue;
+
       try {
         final artworkPath = await _saveArtwork(song.id);
         final albumId = await _upsertAlbum(song, artworkPath: artworkPath);
@@ -112,7 +116,7 @@ class LibraryRepositoryImpl implements LibraryRepository {
             artist: Value(artist),
             albumId: Value(albumId),
             albumArtist: Value(_normalise(song.artist)),
-            trackNumber: Value(song.track),
+            trackNumber: Value(song.track == 0 ? null : song.track),
             genre: Value(_normaliseGenre(song.genre)),
             durationMs: Value(song.duration ?? 0),
             artworkPath: Value(artworkPath),
