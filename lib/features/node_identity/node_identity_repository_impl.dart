@@ -94,6 +94,14 @@ class NodeIdentityRepositoryImpl implements NodeIdentityRepository {
     return row.avatarJpeg;
   }
 
+  @override
+  Future<String?> getShareableHandle() async {
+    final row = await (db.select(db.nodeIdentityTable)).getSingle();
+    final publicAddress = row.nodePublicAddress;
+    if (publicAddress == null || publicAddress.isEmpty) return null;
+    return '@${row.preferredUsername}@$publicAddress';
+  }
+
   ApActor _rowToActor(NodeIdentityTableData row) {
     final url = row.actorUrl;
     return ApActor(

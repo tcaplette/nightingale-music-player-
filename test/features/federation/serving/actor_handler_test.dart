@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -49,6 +50,12 @@ class _FakeIdentityRepo implements NodeIdentityRepository {
 
   @override
   Future<String?> getPublicAddress() async => publicAddress;
+  @override
+  Future<String?> getShareableHandle() async => null;
+  @override
+  Future<void> updateProfile({required String displayName, String? summary, Uint8List? avatarBytes}) async {}
+  @override
+  Future<Uint8List?> getAvatarBytes() async => null;
 }
 
 void main() {

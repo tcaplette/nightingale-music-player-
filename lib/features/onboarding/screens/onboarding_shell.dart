@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:nightingale/core/di/service_locator.dart';
 import 'package:nightingale/core/router/app_router.dart';
 import 'package:nightingale/features/federation/discovery/mastodon_bridge_service.dart';
+import 'package:nightingale/features/federation/discovery/mastodon_oauth_service.dart';
 import 'package:nightingale/features/federation/screens/mastodon_import_screen.dart';
 import 'package:nightingale/features/node_identity/node_identity_notifier.dart';
 import 'package:nightingale/features/onboarding/mastodon_account_provider.dart';
@@ -229,7 +230,7 @@ class _IdentityStepState extends ConsumerState<_IdentityStep> {
   }
 }
 
-// ── Step 3: Mastodon account ──────────────────────────────────────────────────
+// ── Step 3: Mastodon sign-in ──────────────────────────────────────────────────
 
 class _MastodonStep extends ConsumerStatefulWidget {
   const _MastodonStep({super.key, required this.onNext});
@@ -240,34 +241,68 @@ class _MastodonStep extends ConsumerStatefulWidget {
 }
 
 class _MastodonStepState extends ConsumerState<_MastodonStep> {
-  final _handleController = TextEditingController();
-  bool _saving = false;
+  final _instanceController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _loading = false;
   String? _error;
+  String? _connectedAs;
 
   @override
   void dispose() {
-    _handleController.dispose();
+    _instanceController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
-  Future<void> _continue() async {
-    final handle = _handleController.text.trim();
+  Future<void> _signIn() async {
+    final handle = _instanceController.text.trim();
+    final password = _passwordController.text;
     if (handle.isEmpty) {
-      setState(() => _error = 'Enter your Mastodon handle or skip for now.');
-      return;
-    }
-    final validationError = MastodonBridgeService.validateHandle(handle);
-    if (validationError != null) {
-      setState(() => _error = validationError);
+      setState(() => _error = 'Enter your Mastodon account to continue.');
       return;
     }
     setState(() {
-      _saving = true;
+      _loading = true;
       _error = null;
     });
-    await sl<SecureStorageService>().setMastodonHandle(handle);
-    ref.invalidate(mastodonAccountProvider);
-    if (mounted) widget.onNext();
+    final result = await sl<MastodonOAuthService>().signIn(
+      handle,
+      password: password.isNotEmpty ? password : null,
+    );
+    if (!mounted) return;
+    switch (result) {
+      case OAuthSuccess(:final instance, :final accessToken):
+        // Fetch the account handle so we can store it for display elsewhere.
+        final handle = await _fetchHandle(instance, accessToken);
+        if (handle != null) {
+          await sl<SecureStorageService>().setMastodonHandle(handle);
+          ref.invalidate(mastodonAccountProvider);
+        }
+        setState(() {
+          _loading = false;
+          _connectedAs = handle ?? instance;
+        });
+        // Brief pause so the user sees the confirmation, then advance.
+        await Future.delayed(const Duration(milliseconds: 800));
+        if (mounted) widget.onNext();
+      case OAuthCancelled():
+        setState(() => _loading = false);
+      case OAuthFailed(:final reason):
+        setState(() {
+          _loading = false;
+          _error = reason;
+        });
+    }
+  }
+
+  Future<String?> _fetchHandle(String instance, String accessToken) async {
+    try {
+      final response = await (sl<MastodonOAuthService>())
+          .fetchAccountHandle(instance, accessToken);
+      return response;
+    } catch (_) {
+      return null;
+    }
   }
 
   @override
@@ -287,50 +322,77 @@ class _MastodonStepState extends ConsumerState<_MastodonStep> {
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                'Enter your Mastodon handle and we\'ll find which of your connections are already on Nightingale.',
+                'Sign in with Mastodon to see which of your connections are already on Nightingale.',
                 style: theme.textTheme.bodyLarge?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: AppSpacing.xl),
-              AppTextInput(
-                label: 'Mastodon handle',
-                hint: '@you@mastodon.social',
-                controller: _handleController,
-                onChanged: (_) {
-                  if (_error != null) setState(() => _error = null);
-                },
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  _error!,
-                  style: TextStyle(
-                    color: theme.colorScheme.error,
-                    fontSize: 13,
+              if (_connectedAs != null) ...[
+                Row(
+                  children: [
+                    Icon(Icons.check_circle,
+                        color: theme.colorScheme.primary, size: 20),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(
+                      'Connected as $_connectedAs',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ] else ...[
+                AppTextInput(
+                  label: 'Mastodon account',
+                  hint: '@you@mastodon.social',
+                  controller: _instanceController,
+                  onChanged: (_) {
+                    if (_error != null) setState(() => _error = null);
+                  },
+                ),
+                const SizedBox(height: AppSpacing.md),
+                AppTextInput(
+                  label: 'Password',
+                  hint: 'Your Mastodon password',
+                  controller: _passwordController,
+                  obscureText: true,
+                  onChanged: (_) {
+                    if (_error != null) setState(() => _error = null);
+                  },
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    _error!,
+                    style: TextStyle(
+                      color: theme.colorScheme.error,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: AppSpacing.lg),
+                SizedBox(
+                  width: double.infinity,
+                  child: AppButton(
+                    label: _loading ? 'Signing in…' : 'Sign in with Mastodon',
+                    onPressed: _loading ? null : _signIn,
                   ),
                 ),
               ],
-              const SizedBox(height: AppSpacing.lg),
-              SizedBox(
-                width: double.infinity,
-                child: AppButton(
-                  label: _saving ? 'Saving…' : 'Continue',
-                  onPressed: _saving ? null : _continue,
-                ),
-              ),
               const SizedBox(height: AppSpacing.md),
-              Center(
-                child: TextButton(
-                  onPressed: _saving ? null : widget.onNext,
-                  child: Text(
-                    'Skip for now',
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+              if (!_loading)
+                Center(
+                  child: TextButton(
+                    onPressed: widget.onNext,
+                    child: Text(
+                      'Skip for now',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 ),
-              ),
               const Spacer(flex: 2),
             ],
           ),

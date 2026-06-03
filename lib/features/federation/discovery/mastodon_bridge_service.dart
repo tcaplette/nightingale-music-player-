@@ -79,6 +79,151 @@ class MastodonBridgeService {
 
   // ── Main import flow ───────────────────────────────────────────────────────
 
+  /// Imports the social graph for [instance] using an OAuth [accessToken].
+  ///
+  /// Uses the Mastodon API directly with bearer auth, which gives access to
+  /// private accounts and removes the unauthenticated collection cap.
+  /// Never throws — returns an empty list on any failure.
+  Future<List<MastodonMatch>> importSocialGraphAuthenticated(
+    String instance,
+    String accessToken,
+  ) async {
+    AppLogger.debug(
+      'Starting authenticated Mastodon import for $instance',
+      tag: _tag,
+    );
+
+    try {
+      // Fetch the authenticated user's account to get their collection URLs.
+      final accountResponse = await _client.get(
+        Uri.https(instance, '/api/v1/accounts/verify_credentials'),
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+          'Accept': 'application/json',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (accountResponse.statusCode != 200) {
+        AppLogger.debug(
+          'verify_credentials failed: ${accountResponse.statusCode}',
+          tag: _tag,
+        );
+        return [];
+      }
+
+      final accountJson =
+          jsonDecode(accountResponse.body) as Map<String, dynamic>;
+      final accountId = accountJson['id'] as String?;
+      if (accountId == null) return [];
+
+      // Fetch followers and following via authenticated API endpoints.
+      final actorJsonByUrl = <String, Map<String, dynamic>>{};
+      for (final endpoint in [
+        '/api/v1/accounts/$accountId/followers',
+        '/api/v1/accounts/$accountId/following',
+      ]) {
+        final items = await _fetchApiCollection(
+          instance,
+          endpoint,
+          accessToken,
+        );
+        for (final entry in items.entries) {
+          actorJsonByUrl.putIfAbsent(entry.key, () => entry.value);
+        }
+      }
+
+      return _matchNightingaleActors(actorJsonByUrl);
+    } catch (e) {
+      AppLogger.debug('Authenticated import error: $e', tag: _tag);
+      return [];
+    }
+  }
+
+  /// Fetches a Mastodon REST API collection (followers/following) with auth,
+  /// following Link header pagination. Returns raw account JSON keyed by URL.
+  Future<Map<String, Map<String, dynamic>>> _fetchApiCollection(
+    String instance,
+    String endpoint,
+    String accessToken,
+  ) async {
+    final result = <String, Map<String, dynamic>>{};
+    String? nextUrl = Uri.https(instance, endpoint, {'limit': '80'}).toString();
+
+    while (nextUrl != null) {
+      try {
+        final response = await _client.get(
+          Uri.parse(nextUrl),
+          headers: {
+            'Authorization': 'Bearer $accessToken',
+            'Accept': 'application/json',
+          },
+        ).timeout(const Duration(seconds: 10));
+
+        if (response.statusCode != 200) break;
+
+        final list = jsonDecode(response.body) as List<dynamic>;
+        for (final item in list) {
+          if (item is Map<String, dynamic>) {
+            final url = item['url'] as String? ?? item['id'] as String?;
+            if (url != null) result.putIfAbsent(url, () => item);
+          }
+        }
+
+        // Follow Link: <next_url>; rel="next" pagination.
+        final linkHeader = response.headers['link'] ?? '';
+        nextUrl = _extractNextLink(linkHeader);
+      } catch (_) {
+        break;
+      }
+    }
+    return result;
+  }
+
+  static String? _extractNextLink(String linkHeader) {
+    for (final part in linkHeader.split(',')) {
+      if (part.contains('rel="next"')) {
+        final match = RegExp(r'<([^>]+)>').firstMatch(part);
+        return match?.group(1);
+      }
+    }
+    return null;
+  }
+
+  /// Shared logic: scan actor JSON map for x-nightingale-actor-url and
+  /// resolve matched Nightingale actors.
+  Future<List<MastodonMatch>> _matchNightingaleActors(
+    Map<String, Map<String, dynamic>> actorJsonByUrl,
+  ) async {
+    final matches = <MastodonMatch>[];
+    final seen = <String>{};
+
+    for (final actorJson in actorJsonByUrl.values) {
+      final nightingaleUrl = _extractNightingaleUrl(actorJson);
+      if (nightingaleUrl == null) continue;
+      if (!seen.add(nightingaleUrl)) continue;
+
+      final nightingaleResult = await _actorResolver.resolve(
+        nightingaleUrl,
+        discoverySource: 'mastodonImport',
+      );
+
+      if (nightingaleResult is ResolveOk) {
+        final actor = nightingaleResult.actor;
+        matches.add(MastodonMatch(
+          actorUrl: actor.id,
+          displayName: actor.name.isNotEmpty ? actor.name : actor.preferredUsername,
+          avatarUrl: actor.icon,
+        ));
+      }
+    }
+
+    AppLogger.debug(
+      'Authenticated import complete: ${matches.length} matches',
+      tag: _tag,
+    );
+    return matches;
+  }
+
   /// Imports the Mastodon social graph for [handle] and returns matching
   /// Nightingale actors as suggested follows.
   ///
@@ -121,41 +266,7 @@ class MastodonBridgeService {
 
     _markImport(instance);
 
-    // 3. Extract x-nightingale-actor-url from each actor and build matches.
-    final matches = <MastodonMatch>[];
-    final seen = <String>{};
-
-    for (final actorJson in actorJsonByUrl.values) {
-      final nightingaleUrl = _extractNightingaleUrl(actorJson);
-      if (nightingaleUrl == null) continue;
-      if (!seen.add(nightingaleUrl)) continue;
-
-      // Resolve and cache the Nightingale actor.
-      final nightingaleResult = await _actorResolver.resolve(
-        nightingaleUrl,
-        discoverySource: 'mastodonImport',
-      );
-
-      if (nightingaleResult is ResolveOk) {
-        final actor = nightingaleResult.actor;
-        matches.add(MastodonMatch(
-          actorUrl: actor.id,
-          displayName: actor.name.isNotEmpty ? actor.name : actor.preferredUsername,
-          avatarUrl: actor.icon,
-        ));
-        AppLogger.debug(
-          'Mastodon bridge: found ${actor.preferredUsername}',
-          tag: _tag,
-        );
-      }
-    }
-
-    AppLogger.debug(
-      'Mastodon import complete: ${matches.length} matches from ${actorJsonByUrl.length} contacts',
-      tag: _tag,
-    );
-
-    return matches;
+    return _matchNightingaleActors(actorJsonByUrl);
   }
 
   // ── Private ────────────────────────────────────────────────────────────────

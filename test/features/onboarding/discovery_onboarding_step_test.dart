@@ -48,6 +48,11 @@ class _SpyStorage implements SecureStorageService {
   @override Future<String?> getMastodonHandle() async => null;
   @override Future<void> setMastodonHandle(String handle) async {}
   @override Future<void> clearMastodonHandle() async {}
+  @override Future<String?> getMastodonAccessToken(String i) async => null;
+  @override Future<void> setMastodonAccessToken(String i, String t) async {}
+  @override Future<void> clearMastodonCredentials(String i) async {}
+  @override Future<({String clientId, String clientSecret})?> getMastodonClientCredentials(String i) async => null;
+  @override Future<void> setMastodonClientCredentials(String i, String cid, String cs) async {}
 }
 
 Widget _wrap(Widget child) => ProviderScope(

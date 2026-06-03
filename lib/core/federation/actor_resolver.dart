@@ -30,16 +30,21 @@ const _sourcePriority = {
 };
 
 class ActorResolver {
-  ActorResolver({required this.db, this.ttlSeconds = 900});
+  ActorResolver({required this.db, this.ttlSeconds = 900, http.Client? client})
+      : _client = client ?? http.Client();
 
   final AppDatabase db;
   final int ttlSeconds;
+  final http.Client _client;
 
   Future<ResolveResult> resolve(
     String handleOrUrl, {
     String discoverySource = 'manual',
   }) async {
-    final actorUrl = handleOrUrl.startsWith('@')
+    final isHandle = handleOrUrl.contains('@') &&
+        !handleOrUrl.startsWith('http://') &&
+        !handleOrUrl.startsWith('https://');
+    final actorUrl = isHandle
         ? await _webFingerToUrl(handleOrUrl)
         : handleOrUrl;
 
@@ -95,7 +100,7 @@ class ActorResolver {
     String discoverySource = 'manual',
   }) async {
     try {
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse(actorUrl),
         headers: {'Accept': 'application/activity+json'},
       );
@@ -145,24 +150,27 @@ class ActorResolver {
     final parts = stripped.split('@');
     if (parts.length != 2) return null;
     final domain = parts[1];
+    final queryParams = {'resource': 'acct:$stripped'};
+    const headers = {'Accept': 'application/jrd+json'};
 
-    try {
-      final uri = Uri.https(
-        domain,
-        '/.well-known/webfinger',
-        {'resource': 'acct:$stripped'},
-      );
-      final response = await http.get(
-        uri,
-        headers: {'Accept': 'application/jrd+json'},
-      );
-      if (response.statusCode != 200) return null;
-      final jrd = WebFingerJrd.fromJson(
-        jsonDecode(response.body) as Map<String, dynamic>,
-      );
-      return jrd.selfHref;
-    } catch (_) {
-      return null;
+    // Try HTTPS first; fall back to HTTP for Nightingale nodes on plain HTTP.
+    for (final scheme in ['https', 'http']) {
+      try {
+        final uri = scheme == 'https'
+            ? Uri.https(domain, '/.well-known/webfinger', queryParams)
+            : Uri.http(domain, '/.well-known/webfinger', queryParams);
+        final response = await _client.get(uri, headers: headers)
+            .timeout(const Duration(seconds: 8));
+        if (response.statusCode == 200) {
+          final jrd = WebFingerJrd.fromJson(
+            jsonDecode(response.body) as Map<String, dynamic>,
+          );
+          return jrd.selfHref;
+        }
+      } catch (_) {
+        // Try next scheme.
+      }
     }
+    return null;
   }
 }

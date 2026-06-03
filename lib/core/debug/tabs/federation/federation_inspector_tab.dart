@@ -6,7 +6,6 @@ import 'package:nightingale/core/debug/tabs/federation/panels/incoming_activity_
 import 'package:nightingale/core/debug/tabs/federation/panels/incoming_library_feed_panel.dart';
 import 'package:nightingale/core/debug/tabs/federation/panels/library_publishing_panel.dart';
 import 'package:nightingale/core/debug/tabs/federation/panels/moderation_state_panel.dart';
-import 'package:nightingale/core/debug/tabs/federation/panels/mdns_debug_panel.dart';
 import 'package:nightingale/core/debug/tabs/federation/panels/node_identity_panel.dart';
 import 'package:nightingale/core/debug/tabs/federation/panels/outgoing_activity_log_panel.dart';
 import 'package:nightingale/core/debug/tabs/federation/panels/reachability_status_panel.dart';
@@ -23,7 +22,7 @@ class FederationInspectorTab extends StatelessWidget {
   Widget build(BuildContext context) {
     assert(kDebugMode, 'FederationInspectorTab must only be used in debug builds');
     return DefaultTabController(
-      length: 12,
+      length: 11,
       child: Column(
         children: [
           const TabBar(
@@ -32,14 +31,12 @@ class FederationInspectorTab extends StatelessWidget {
             labelStyle: TextStyle(fontSize: 10),
             tabs: [
               Tab(text: 'Identity'),
-              Tab(text: 'mDNS'),
               Tab(text: 'Outgoing'),
               Tab(text: 'Incoming'),
               Tab(text: 'Actors'),
               Tab(text: 'Reachability'),
               Tab(text: 'Moderation'),
               Tab(text: 'WebFinger'),
-              // Phase 4 tabs
               Tab(text: 'Library Pub'),
               Tab(text: 'Stream'),
               Tab(text: 'Feed'),
@@ -50,14 +47,12 @@ class FederationInspectorTab extends StatelessWidget {
             child: TabBarView(
               children: [
                 NodeIdentityPanel(),
-                MdnsDebugPanel(),
                 OutgoingActivityLogPanel(),
                 IncomingActivityLogPanel(),
                 ActorCachePanel(),
                 ReachabilityStatusPanel(),
                 ModerationStatePanel(),
                 WebFingerDebuggerPanel(),
-                // Phase 4 panels
                 LibraryPublishingPanel(),
                 StreamInspectorPanel(),
                 IncomingLibraryFeedPanel(),

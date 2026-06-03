@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nightingale/core/activitypub/models/ap_actor.dart';
@@ -12,6 +13,8 @@ import 'package:nightingale/features/library/models/artist_model.dart';
 import 'package:nightingale/features/library/models/scan_result.dart';
 import 'package:nightingale/features/library/models/track_model.dart';
 import 'package:nightingale/features/node_identity/node_identity_repository.dart';
+import 'package:nightingale/features/settings/data/settings_repository.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 AppDatabase _inMemoryDb() => AppDatabase(NativeDatabase.memory());
 
@@ -23,6 +26,9 @@ class _FakeLibraryRepo implements LibraryRepository {
       filePath: '/music/song1.mp3',
       title: 'Song One',
       artist: 'Artist A',
+      albumName: 'Album A',
+      genre: 'Rock',
+      releaseYear: 2020,
       durationMs: 180000,
       dateAdded: DateTime.now(),
     ),
@@ -31,6 +37,9 @@ class _FakeLibraryRepo implements LibraryRepository {
       filePath: '/music/song2.mp3',
       title: 'Song Two',
       artist: 'Artist B',
+      albumName: 'Album B',
+      genre: 'Pop',
+      releaseYear: 2021,
       durationMs: 240000,
       dateAdded: DateTime.now(),
     ),
@@ -46,6 +55,8 @@ class _FakeLibraryRepo implements LibraryRepository {
   Stream<List<AlbumModel>> watchAlbums() async* { yield <AlbumModel>[]; }
   @override
   Future<List<TrackModel>> getTracksByAlbum(int albumId) async => <TrackModel>[];
+  @override
+  Stream<List<TrackModel>> watchTracksByAlbum(int albumId) async* { yield <TrackModel>[]; }
   @override
   Future<AlbumModel?> getAlbumById(int albumId) async => null;
   @override
@@ -100,6 +111,12 @@ class _FakeIdentityRepo implements NodeIdentityRepository {
 
   @override
   Future<String?> getPublicAddress() async => null;
+  @override
+  Future<String?> getShareableHandle() async => null;
+  @override
+  Future<void> updateProfile({required String displayName, String? summary, Uint8List? avatarBytes}) async {}
+  @override
+  Future<Uint8List?> getAvatarBytes() async => null;
 }
 
 void main() {
@@ -108,11 +125,13 @@ void main() {
     late AppDatabase db;
 
     setUp(() {
+      FlutterSecureStorage.setMockInitialValues({});
       db = _inMemoryDb();
       publisher = LibraryPublisher(
         libraryRepo: _FakeLibraryRepo(),
         identityRepo: _FakeIdentityRepo(),
         db: db,
+        settings: SettingsRepository(),
       );
     });
 

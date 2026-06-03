@@ -1,10 +1,12 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:nightingale/core/di/service_locator.dart';
+import 'package:nightingale/features/federation/stun/stun_address_resolver.dart';
 import 'package:nightingale/features/node_identity/node_identity_repository.dart';
 import 'package:nightingale/shared/theme/app_spacing.dart';
 import 'package:nightingale/shared/theme/app_typography.dart';
@@ -28,6 +30,8 @@ class _ProfileSettingsScreenState
   bool _loading = true;
   bool _saving = false;
   bool _dirty = false;
+  String? _shareableHandle;
+  bool _resolvingAddress = false;
 
   @override
   void initState() {
@@ -35,6 +39,7 @@ class _ProfileSettingsScreenState
     _nameController = TextEditingController()..addListener(_onFieldChanged);
     _bioController = TextEditingController()..addListener(_onFieldChanged);
     _loadProfile();
+    _loadShareableHandle();
   }
 
   @override
@@ -46,6 +51,34 @@ class _ProfileSettingsScreenState
 
   void _onFieldChanged() {
     if (!_loading) setState(() => _dirty = true);
+  }
+
+  Future<void> _loadShareableHandle() async {
+    final repo = sl<NodeIdentityRepository>();
+    final handle = await repo.getShareableHandle();
+    if (!mounted) return;
+    setState(() => _shareableHandle = handle);
+  }
+
+  Future<void> _retryStun() async {
+    setState(() => _resolvingAddress = true);
+    try {
+      final stun = sl<StunAddressResolver>();
+      final address = await stun.resolve();
+      final repo = sl<NodeIdentityRepository>();
+      await repo.updatePublicAddress(address);
+      await _loadShareableHandle();
+    } catch (_) {}
+    if (mounted) setState(() => _resolvingAddress = false);
+  }
+
+  Future<void> _copyAddress() async {
+    if (_shareableHandle == null) return;
+    await Clipboard.setData(ClipboardData(text: _shareableHandle!));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Address copied')),
+    );
   }
 
   Future<void> _loadProfile() async {
@@ -222,8 +255,101 @@ class _ProfileSettingsScreenState
                     border: OutlineInputBorder(),
                   ),
                 ),
+                const SizedBox(height: AppSpacing.lg),
+
+                // ── Your address ─────────────────────────────────────────────
+                Text('Your address', style: AppTypography.labelMd),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  'Share this with anyone so they can find you.',
+                  style: AppTypography.bodySm.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                _AddressSection(
+                  handle: _shareableHandle,
+                  resolving: _resolvingAddress,
+                  onCopy: _copyAddress,
+                  onRetry: _retryStun,
+                ),
               ],
             ),
+    );
+  }
+}
+
+class _AddressSection extends StatelessWidget {
+  const _AddressSection({
+    required this.handle,
+    required this.resolving,
+    required this.onCopy,
+    required this.onRetry,
+  });
+
+  final String? handle;
+  final bool resolving;
+  final VoidCallback onCopy;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    if (resolving) {
+      return const Row(
+        children: [
+          SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+          SizedBox(width: AppSpacing.sm),
+          Text('Resolving your address…'),
+        ],
+      );
+    }
+
+    if (handle == null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Could not resolve public address.',
+            style: TextStyle(color: scheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          TextButton(
+            onPressed: onRetry,
+            child: const Text('Retry'),
+          ),
+        ],
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        border: Border.all(color: scheme.outline),
+        borderRadius: BorderRadius.circular(4),
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              handle!,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontFamily: 'monospace',
+                  ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.copy, size: 18),
+            tooltip: 'Copy address',
+            onPressed: onCopy,
+          ),
+        ],
+      ),
     );
   }
 }

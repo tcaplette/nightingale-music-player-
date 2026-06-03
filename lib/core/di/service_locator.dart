@@ -17,10 +17,9 @@ import 'package:nightingale/core/logging/app_logger.dart';
 import 'package:nightingale/core/repositories/app_info_repository.dart';
 import 'package:nightingale/features/federation/delivery/activity_delivery_service.dart';
 import 'package:nightingale/features/federation/discovery/mastodon_bridge_service.dart';
+import 'package:nightingale/features/federation/discovery/mastodon_oauth_service.dart';
 import 'package:nightingale/features/federation/discovery/peer_discovery_service.dart';
 import 'package:nightingale/features/federation/discovery/peer_exchange_service.dart';
-import 'package:nightingale/features/federation/mdns/mdns_advertiser.dart';
-import 'package:nightingale/features/federation/mdns/mdns_discovery_service.dart';
 import 'package:nightingale/features/federation/moderation/moderation_repository.dart';
 import 'package:nightingale/features/federation/moderation/rate_limiter.dart';
 import 'package:nightingale/features/federation/deduplication/acoustic_fingerprint_service.dart';
@@ -217,9 +216,14 @@ Future<void> setupServiceLocator() async {
     PeerExchangeService(actorResolver: _sl<ActorResolver>()),
   );
 
-  // Mastodon bridge — social graph import via x-nightingale-actor-url
+  // Mastodon bridge — social graph import
   _sl.registerSingleton<MastodonBridgeService>(
     MastodonBridgeService(actorResolver: _sl<ActorResolver>()),
+  );
+
+  // Mastodon OAuth — system browser sign-in and token management
+  _sl.registerSingleton<MastodonOAuthService>(
+    MastodonOAuthService(storage: _sl<SecureStorageService>()),
   );
 
   // Social subscribing
@@ -233,23 +237,15 @@ Future<void> setupServiceLocator() async {
     ),
   );
 
-  // mDNS discovery
-  final mdnsDiscovery = MdnsDiscoveryService();
-  _sl.registerSingleton<MdnsDiscoveryService>(mdnsDiscovery);
-  mdnsDiscovery.startBrowsing().ignore();
-
-  // Node reachability (mDNS-aware)
+  // Node reachability
   final reachability = NodeReachabilityService();
-  reachability.injectMdns(mdnsDiscovery);
   _sl.registerSingleton<NodeReachabilityService>(reachability);
 
-  // Peer discovery — username search across mDNS, actor cache, social graph,
-  // and the bootstrap discovery directory
+  // Peer discovery — username search across actor cache and social graph
   _sl.registerSingleton<PeerDiscoveryService>(
     PeerDiscoveryService(
       db: db,
       actorResolver: _sl<ActorResolver>(),
-      mdns: mdnsDiscovery,
     ),
   );
 
@@ -327,23 +323,6 @@ Future<void> setupServiceLocator() async {
   }
 
   // mDNS advertiser — start after server is bound so port is known
-  final identity = _sl<NodeIdentityRepository>();
-  String? username;
-  try {
-    final actor = await identity.getLocalActor();
-    username = actor.preferredUsername;
-  } catch (_) {
-    // Identity may not exist yet (first launch / pre-onboarding).
-  }
-  final advertiser = MdnsAdvertiser(
-    username: username ?? 'nightingale',
-    port: server.currentPort ?? _kFederationPort,
-  );
-  _sl.registerSingleton<MdnsAdvertiser>(advertiser);
-  if (username != null) {
-    advertiser.start().ignore();
-  }
-
   // Startup delivery sweep — re-enqueue stale pending/retrying activities
   final delivery = _sl<ActivityDeliveryService>();
   delivery.sweepPendingOnStartup().ignore();

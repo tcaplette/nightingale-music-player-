@@ -9,6 +9,7 @@ import 'package:nightingale/core/di/service_locator.dart' show sl;
 import 'package:nightingale/features/federation/discovery/mastodon_bridge_service.dart';
 import 'package:nightingale/features/federation/screens/mastodon_import_screen.dart';
 import 'package:nightingale/features/social/providers/social_graph_notifier.dart';
+import 'package:nightingale/features/onboarding/secure_storage_service.dart';
 import 'package:nightingale/shared/theme/app_theme.dart';
 
 // Stub SocialRepository for provider overrides.
@@ -89,15 +90,41 @@ void _registerBridge(_StubMastodonBridgeService bridge) {
   getIt.registerSingleton<MastodonBridgeService>(bridge);
 }
 
+class _StubStorage implements SecureStorageService {
+  @override Future<bool> getOnboardingComplete() async => false;
+  @override Future<void> setOnboardingComplete(bool v) async {}
+  @override Future<bool> getDiscoveryShown() async => false;
+  @override Future<void> setDiscoveryShown(bool v) async {}
+  @override Future<String?> getMastodonHandle() async => null;
+  @override Future<void> setMastodonHandle(String h) async {}
+  @override Future<void> clearMastodonHandle() async {}
+  @override Future<String?> getMastodonAccessToken(String i) async => null;
+  @override Future<void> setMastodonAccessToken(String i, String t) async {}
+  @override Future<void> clearMastodonCredentials(String i) async {}
+  @override Future<({String clientId, String clientSecret})?> getMastodonClientCredentials(String i) async => null;
+  @override Future<void> setMastodonClientCredentials(String i, String cid, String cs) async {}
+}
+
+void _registerStorage() {
+  final getIt = GetIt.instance;
+  if (!getIt.isRegistered<SecureStorageService>()) {
+    getIt.registerSingleton<SecureStorageService>(_StubStorage());
+  }
+}
+
 void main() {
   setUp(() {
     FlutterSecureStorage.setMockInitialValues({});
+    _registerStorage();
   });
 
   tearDown(() async {
     final getIt = GetIt.instance;
     if (getIt.isRegistered<MastodonBridgeService>()) {
       getIt.unregister<MastodonBridgeService>();
+    }
+    if (getIt.isRegistered<SecureStorageService>()) {
+      getIt.unregister<SecureStorageService>();
     }
   });
 

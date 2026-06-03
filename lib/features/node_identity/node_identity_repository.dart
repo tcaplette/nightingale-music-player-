@@ -19,4 +19,8 @@ abstract class NodeIdentityRepository {
     Uint8List? avatarBytes,
   });
   Future<Uint8List?> getAvatarBytes();
+
+  /// Returns the shareable handle in @username@host:port format.
+  /// Returns null if the STUN public address has not been resolved yet.
+  Future<String?> getShareableHandle();
 }

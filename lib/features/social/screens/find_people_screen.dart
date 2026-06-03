@@ -4,14 +4,17 @@ import 'package:go_router/go_router.dart';
 import 'package:nightingale/core/activitypub/models/ap_actor.dart';
 import 'package:nightingale/core/di/service_locator.dart';
 import 'package:nightingale/core/federation/actor_resolver.dart';
+import 'package:nightingale/features/federation/discovery/mastodon_bridge_service.dart';
+import 'package:nightingale/features/federation/discovery/mastodon_oauth_service.dart';
 import 'package:nightingale/features/federation/discovery/peer_discovery_service.dart';
-import 'package:nightingale/features/federation/mdns/mdns_discovery_service.dart';
-import 'package:nightingale/features/federation/screens/mastodon_import_screen.dart';
 import 'package:nightingale/features/onboarding/mastodon_account_provider.dart';
+import 'package:nightingale/features/onboarding/secure_storage_service.dart';
 import 'package:nightingale/features/social/providers/social_graph_notifier.dart';
 import 'package:nightingale/shared/components/identity/person_display.dart';
 import 'package:nightingale/shared/theme/app_colors.dart';
 import 'package:nightingale/shared/theme/app_spacing.dart';
+
+// ── Lookup state ──────────────────────────────────────────────────────────────
 
 sealed class _LookupState {}
 class _LookupIdle extends _LookupState {}
@@ -25,6 +28,22 @@ class _LookupFailed extends _LookupState {
   final String message;
 }
 
+// ── Mastodon import state ─────────────────────────────────────────────────────
+
+sealed class _ImportState {}
+class _ImportIdle extends _ImportState {}
+class _ImportLoading extends _ImportState {}
+class _ImportDone extends _ImportState {
+  _ImportDone(this.matches);
+  final List<MastodonMatch> matches;
+}
+class _ImportFailed extends _ImportState {
+  _ImportFailed(this.message);
+  final String message;
+}
+
+// ── Screen ────────────────────────────────────────────────────────────────────
+
 class FindPeopleScreen extends ConsumerStatefulWidget {
   const FindPeopleScreen({super.key});
 
@@ -33,55 +52,108 @@ class FindPeopleScreen extends ConsumerStatefulWidget {
 }
 
 class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
-  final _controller = TextEditingController();
+  final _searchController = TextEditingController();
+  final _instanceController = TextEditingController();
+  final _passwordController = TextEditingController();
   _LookupState _lookupState = _LookupIdle();
-  List<MdnsPeer> _nearbyPeers = [];
-  bool _refreshing = false;
+  _ImportState _importState = _ImportIdle();
 
   @override
   void initState() {
     super.initState();
-    _loadNearbyPeers();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initFromStoredAccount());
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _searchController.dispose();
+    _instanceController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
-  void _loadNearbyPeers() {
-    try {
-      final peers = sl<MdnsDiscoveryService>().peers.values.toList();
-      setState(() => _nearbyPeers = peers);
-    } catch (_) {}
+  Future<void> _initFromStoredAccount() async {
+    // Check for a handle stored during onboarding first.
+    final storedHandle = await sl<SecureStorageService>().getMastodonHandle();
+    final instance = storedHandle != null
+        ? _instanceFromHandle(storedHandle)
+        : _instanceController.text.trim();
+
+    if (instance == null || instance.isEmpty) return;
+
+    // Pre-fill with the stored handle so the user doesn't have to re-type it.
+    if (_instanceController.text.trim().isEmpty && storedHandle != null) {
+      _instanceController.text = storedHandle;
+    }
+
+    // If we already have an OAuth token, run the import automatically.
+    final token = await sl<MastodonOAuthService>().getStoredToken(instance);
+    if (token != null) {
+      await _runImport(instance, token);
+    }
   }
 
-  Future<void> _refresh() async {
-    setState(() => _refreshing = true);
-    try {
-      await sl<MdnsDiscoveryService>().refresh();
-      // Give mDNS a moment to populate results.
-      await Future.delayed(const Duration(seconds: 2));
-      _loadNearbyPeers();
-    } catch (_) {}
-    if (mounted) setState(() => _refreshing = false);
+  static String? _instanceFromHandle(String handle) {
+    // Accepts @user@instance.social or user@instance.social
+    final stripped = handle.startsWith('@') ? handle.substring(1) : handle;
+    final parts = stripped.split('@');
+    if (parts.length != 2 || parts[1].isEmpty) return null;
+    return parts[1];
+  }
+
+  Future<void> _signInWithMastodon() async {
+    final handle = _instanceController.text.trim();
+    final password = _passwordController.text;
+    if (handle.isEmpty) {
+      setState(() => _importState = _ImportFailed('Enter your Mastodon account first.'));
+      return;
+    }
+    setState(() => _importState = _ImportLoading());
+    final result = await sl<MastodonOAuthService>().signIn(
+      handle,
+      password: password.isNotEmpty ? password : null,
+    );
+    if (!mounted) return;
+    switch (result) {
+      case OAuthSuccess(:final accessToken, :final instance):
+        await _runImport(instance, accessToken);
+      case OAuthCancelled():
+        setState(() => _importState = _ImportIdle());
+      case OAuthFailed(:final reason):
+        setState(() => _importState = _ImportFailed(reason));
+    }
+  }
+
+  Future<void> _runImport(String instance, String accessToken) async {
+    setState(() => _importState = _ImportLoading());
+    final matches = await sl<MastodonBridgeService>()
+        .importSocialGraphAuthenticated(instance, accessToken);
+    if (!mounted) return;
+    setState(() => _importState = _ImportDone(matches));
+  }
+
+  Future<void> _disconnect() async {
+    final instance = _instanceController.text.trim();
+    await sl<MastodonOAuthService>().signOut(instance);
+    if (!mounted) return;
+    setState(() => _importState = _ImportIdle());
   }
 
   Future<void> _resolveByUsername(String input) async {
     final trimmed = input.trim();
     if (trimmed.isEmpty) return;
-
     setState(() => _lookupState = _LookupLoading());
 
     ApActor? actor;
-
-    // Full WebFinger handle (@user@instance) — resolve directly.
-    if (trimmed.contains('@')) {
+    if (trimmed.contains('@') &&
+        !trimmed.startsWith('http://') &&
+        !trimmed.startsWith('https://')) {
+      final result = await sl<ActorResolver>().resolve(trimmed);
+      if (result is ResolveOk) actor = result.actor;
+    } else if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
       final result = await sl<ActorResolver>().resolve(trimmed);
       if (result is ResolveOk) actor = result.actor;
     } else {
-      // Plain username — search via mDNS, actor cache, social graph.
       actor = await sl<PeerDiscoveryService>().searchByUsername(trimmed);
     }
 
@@ -90,21 +162,7 @@ class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
       setState(() => _lookupState = _LookupFound(actor!));
     } else {
       setState(() => _lookupState = _LookupFailed(
-            'Couldn\'t find "$trimmed". Make sure the handle is correct and their device is reachable.',
-          ));
-    }
-  }
-
-  Future<void> _resolveUrl(String actorUrl) async {
-    setState(() => _lookupState = _LookupLoading());
-    final result = await sl<PeerDiscoveryService>()
-        .searchByUsername(Uri.parse(actorUrl).pathSegments.last);
-    if (!mounted) return;
-    if (result != null) {
-      setState(() => _lookupState = _LookupFound(result));
-    } else {
-      setState(() => _lookupState = _LookupFailed(
-            'Couldn\'t reach that node.',
+            'Couldn\'t find "$trimmed". Try signing in with Mastodon to find people from your network.',
           ));
     }
   }
@@ -118,8 +176,6 @@ class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
         children: [
           _buildMastodonSection(context),
           const SizedBox(height: AppSpacing.xl),
-          _buildNearbySection(),
-          const SizedBox(height: AppSpacing.xl),
           _buildManualSection(),
         ],
       ),
@@ -127,105 +183,71 @@ class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
   }
 
   Widget _buildMastodonSection(BuildContext context) {
-    final savedHandle = ref.watch(mastodonAccountProvider).valueOrNull;
-    if (savedHandle != null) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'From Mastodon',
-          style: Theme.of(context).textTheme.titleSmall,
-        ),
+        Text('From Mastodon', style: theme.textTheme.titleSmall),
         const SizedBox(height: AppSpacing.xs),
         Text(
-          'Already on Mastodon? See which of your connections are here.',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: AppColors.neutral400,
-              ),
+          'Sign in with your Mastodon account to see which of your connections are on Nightingale.',
+          style: theme.textTheme.bodyMedium
+              ?.copyWith(color: AppColors.neutral400),
         ),
-        const SizedBox(height: AppSpacing.sm),
-        OutlinedButton.icon(
-          onPressed: () => Navigator.of(context).push<void>(
-            MaterialPageRoute(
-              builder: (_) => MastodonImportScreen(
-                onDone: () => Navigator.of(context).pop(),
-              ),
-            ),
-          ),
-          icon: const Icon(Icons.link, size: 18),
-          label: const Text('Connect Mastodon'),
-        ),
-      ],
-    );
-  }
+        const SizedBox(height: AppSpacing.md),
 
-  Widget _buildNearbySection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Text(
-              'Nearby',
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
-            const Spacer(),
-            _refreshing
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : TextButton(
-                    onPressed: _refresh,
-                    style: TextButton.styleFrom(
-                      minimumSize: Size.zero,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.sm,
-                        vertical: AppSpacing.xs,
-                      ),
-                    ),
-                    child: const Text('Refresh', style: TextStyle(fontSize: 12)),
-                  ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        if (_nearbyPeers.isEmpty)
-          Text(
-            _refreshing
-                ? 'Scanning for nearby nodes…'
-                : 'No Nightingale nodes found on this network.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: AppColors.neutral400,
-                ),
-          )
-        else
-          ..._nearbyPeers.map(
-            (peer) => _NearbyPeerTile(
-              peer: peer,
-              onTap: () => _resolveUrl(peer.actorUrl),
+        if (_importState is _ImportIdle || _importState is _ImportFailed) ...[
+          TextField(
+            controller: _instanceController,
+            decoration: const InputDecoration(
+              labelText: 'Mastodon account',
+              hintText: '@you@mastodon.social',
             ),
           ),
-        if (_lookupState is _LookupLoading)
+          const SizedBox(height: AppSpacing.sm),
+          TextField(
+            controller: _passwordController,
+            obscureText: true,
+            decoration: const InputDecoration(
+              labelText: 'Password',
+              hintText: 'Your Mastodon password',
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: _signInWithMastodon,
+              child: const Text('Sign in with Mastodon'),
+            ),
+          ),
+          if (_importState is _ImportFailed) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              (_importState as _ImportFailed).message,
+              style: TextStyle(
+                color: theme.colorScheme.error,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ],
+
+        if (_importState is _ImportLoading)
           const Padding(
-            padding: EdgeInsets.only(top: AppSpacing.md),
+            padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
             child: Center(child: CircularProgressIndicator()),
           ),
-        if (_lookupState is _LookupFound)
-          Padding(
-            padding: const EdgeInsets.only(top: AppSpacing.md),
-            child: _ActorResultCard(actor: (_lookupState as _LookupFound).actor),
+
+        if (_importState is _ImportDone) ...[
+          _ConnectedBanner(
+            instance: _instanceController.text.trim(),
+            onDisconnect: _disconnect,
           ),
-        if (_lookupState is _LookupFailed)
-          Padding(
-            padding: const EdgeInsets.only(top: AppSpacing.md),
-            child: Text(
-              (_lookupState as _LookupFailed).message,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: AppColors.neutral400,
-                  ),
-            ),
-          ),
+          const SizedBox(height: AppSpacing.md),
+          _MatchResults(matches: (_importState as _ImportDone).matches),
+        ],
       ],
     );
   }
@@ -240,48 +262,140 @@ class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
         ),
         const SizedBox(height: AppSpacing.xs),
         Text(
-          'Enter a username or Mastodon-style handle (@you@instance.social) to find someone directly.',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: AppColors.neutral400,
-              ),
+          'Search for someone you may already be connected to, or paste a link they shared with you.',
+          style: Theme.of(context)
+              .textTheme
+              .bodyMedium
+              ?.copyWith(color: AppColors.neutral400),
         ),
         const SizedBox(height: AppSpacing.md),
         TextField(
-          controller: _controller,
+          controller: _searchController,
           textInputAction: TextInputAction.search,
           onSubmitted: _resolveByUsername,
           decoration: InputDecoration(
-            hintText: 'Username or @you@instance.social',
+            hintText: 'Username or paste a shared link',
             suffixIcon: IconButton(
               icon: const Icon(Icons.arrow_forward),
-              onPressed: () => _resolveByUsername(_controller.text),
+              onPressed: () => _resolveByUsername(_searchController.text),
             ),
           ),
         ),
+        if (_lookupState is _LookupLoading)
+          const Padding(
+            padding: EdgeInsets.only(top: AppSpacing.md),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        if (_lookupState is _LookupFound)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.md),
+            child: _ActorResultCard(
+              actor: (_lookupState as _LookupFound).actor,
+            ),
+          ),
+        if (_lookupState is _LookupFailed)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.md),
+            child: Text(
+              (_lookupState as _LookupFailed).message,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppColors.neutral400,
+                  ),
+            ),
+          ),
       ],
     );
   }
 }
 
-class _NearbyPeerTile extends StatelessWidget {
-  const _NearbyPeerTile({required this.peer, required this.onTap});
-  final MdnsPeer peer;
-  final VoidCallback onTap;
+// ── Sub-widgets ───────────────────────────────────────────────────────────────
+
+class _ConnectedBanner extends StatelessWidget {
+  const _ConnectedBanner({required this.instance, required this.onDisconnect});
+  final String instance;
+  final VoidCallback onDisconnect;
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: const CircleAvatar(
-        child: Icon(Icons.person_outline, size: 20),
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
       ),
-      title: Text(peer.username),
-      subtitle: Text(
-        '${peer.ip}:${peer.port}',
-        style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primaryContainer,
+        borderRadius: BorderRadius.circular(8),
       ),
-      trailing: const Icon(Icons.chevron_right, size: 18),
-      onTap: onTap,
+      child: Row(
+        children: [
+          Icon(Icons.check_circle, size: 18, color: theme.colorScheme.primary),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              'Connected to $instance',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onPrimaryContainer,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: onDisconnect,
+            child: const Text('Disconnect'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MatchResults extends ConsumerWidget {
+  const _MatchResults({required this.matches});
+  final List<MastodonMatch> matches;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (matches.isEmpty) {
+      return Text(
+        'None of your Mastodon connections are on Nightingale yet.',
+        style: Theme.of(context)
+            .textTheme
+            .bodyMedium
+            ?.copyWith(color: AppColors.neutral400),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '${matches.length} connection${matches.length == 1 ? '' : 's'} found',
+          style: Theme.of(context).textTheme.titleSmall,
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        for (final match in matches)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: Card(
+              margin: EdgeInsets.zero,
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: PersonDisplay(
+                        displayName: match.displayName,
+                        avatarUrl: match.avatarUrl,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    _FollowButton(actorUrl: match.actorUrl),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -293,7 +407,6 @@ class _ActorResultCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final node = Uri.tryParse(actor.id)?.host ?? actor.id;
-
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
@@ -306,9 +419,8 @@ class _ActorResultCard extends ConsumerWidget {
                   '/profile/${Uri.encodeComponent(actor.id)}',
                 ),
                 child: PersonDisplay(
-                  displayName: actor.name.isNotEmpty
-                      ? actor.name
-                      : actor.preferredUsername,
+                  displayName:
+                      actor.name.isNotEmpty ? actor.name : actor.preferredUsername,
                   handle: '@${actor.preferredUsername}@$node',
                   avatarUrl: actor.icon,
                   showHandle: true,

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:drift/native.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -190,6 +191,12 @@ class _FakeIdentityRepo implements NodeIdentityRepository {
 
   @override
   Future<String?> getPublicAddress() async => null;
+  @override
+  Future<String?> getShareableHandle() async => null;
+  @override
+  Future<void> updateProfile({required String displayName, String? summary, Uint8List? avatarBytes}) async {}
+  @override
+  Future<Uint8List?> getAvatarBytes() async => null;
 }
 
 class _FakeDelivery extends ActivityDeliveryService {
