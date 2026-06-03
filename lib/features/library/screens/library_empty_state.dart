@@ -7,11 +7,24 @@ class LibraryEmptyState extends StatelessWidget {
     required this.icon,
     required this.message,
     this.detail,
+    this.discoveredCount,
+    this.isScanning = false,
+    this.onChooseSongs,
   });
 
   final IconData icon;
   final String message;
   final String? detail;
+
+  /// Number of tracks discovered on device but not yet in the library.
+  /// When > 0 and [isScanning] is false, shows a count and a CTA button.
+  final int? discoveredCount;
+
+  /// When true, shows a scanning indicator instead of the count/CTA.
+  final bool isScanning;
+
+  /// Called when the user taps the "Choose Songs" CTA.
+  final VoidCallback? onChooseSongs;
 
   @override
   Widget build(BuildContext context) {
@@ -41,6 +54,35 @@ class LibraryEmptyState extends StatelessWidget {
                   color: scheme.onSurface.withValues(alpha: 0.35),
                 ),
                 textAlign: TextAlign.center,
+              ),
+            ],
+            const SizedBox(height: AppSpacing.lg),
+            if (isScanning) ...[
+              const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Scanning for music…',
+                style: textTheme.labelSmall?.copyWith(
+                  color: scheme.onSurface.withValues(alpha: 0.4),
+                ),
+              ),
+            ] else if ((discoveredCount ?? 0) > 0) ...[
+              Text(
+                'You have $discoveredCount ${discoveredCount == 1 ? "song" : "songs"} available to import',
+                style: textTheme.bodyMedium?.copyWith(
+                  color: scheme.primary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              FilledButton.icon(
+                onPressed: onChooseSongs,
+                icon: const Icon(Icons.library_music_outlined),
+                label: const Text('Choose Songs'),
               ),
             ],
           ],

@@ -5,4 +5,5 @@ part of 'album_dao.dart';
 // ignore_for_file: type=lint
 mixin _$AlbumDaoMixin on DatabaseAccessor<AppDatabase> {
   $AlbumsTableTable get albumsTable => attachedDatabase.albumsTable;
+  $TracksTableTable get tracksTable => attachedDatabase.tracksTable;
 }

@@ -22,12 +22,9 @@ class LibraryRepositoryImpl implements LibraryRepository {
 
   // ── Permissions ────────────────────────────────────────────────────────────
 
-  /// Requests audio media permission. Returns true if granted.
   Future<bool> _ensureAudioPermission() async {
     final permission = await Permission.audio.request();
     if (permission.isGranted) return true;
-
-    // Fallback for older Android versions that use storage permission
     final storage = await Permission.storage.request();
     return storage.isGranted;
   }
@@ -43,7 +40,6 @@ class LibraryRepositoryImpl implements LibraryRepository {
 
     AppLogger.info('Library scan started', tag: _tag);
 
-    // Check permission before querying to avoid plugin crash
     final hasPermission = await _ensureAudioPermission();
     if (!hasPermission) {
       AppLogger.warning('Audio permission denied — returning empty scan', tag: _tag);
@@ -96,8 +92,8 @@ class LibraryRepositoryImpl implements LibraryRepository {
       }
       scannedPaths.add(path);
 
-      // Skip tracks already in the DB. Preserves user-edited metadata fields
-      // (releaseYear, genre, etc.) that would otherwise be wiped by an upsert.
+      // Skip tracks already in DB — preserves user-edited metadata and
+      // does NOT change isIncluded for existing tracks.
       if (existingPaths.contains(path)) continue;
 
       try {
@@ -106,9 +102,9 @@ class LibraryRepositoryImpl implements LibraryRepository {
         await _upsertArtist(_normalise(song.artist) ?? 'Unknown Artist');
         final title = _normalise(song.title) ?? _titleFromPath(path);
         final artist = _normalise(song.artist) ?? 'Unknown Artist';
-
         final isrc = await _readIsrc(path);
 
+        // New tracks are NOT auto-included — user must explicitly select them.
         await _db.trackDao.insertTrack(
           TracksTableCompanion.insert(
             filePath: path,
@@ -121,6 +117,7 @@ class LibraryRepositoryImpl implements LibraryRepository {
             durationMs: Value(song.duration ?? 0),
             artworkPath: Value(artworkPath),
             isrc: Value(isrc),
+            isIncluded: const Value(false),
           ),
         );
         parsed++;
@@ -156,7 +153,6 @@ class LibraryRepositoryImpl implements LibraryRepository {
     return result;
   }
 
-  /// Extracts and saves album artwork for a song; returns the saved file path or null.
   Future<String?> _saveArtwork(int songId) async {
     try {
       final bytes = await _query.queryArtwork(
@@ -178,9 +174,6 @@ class LibraryRepositoryImpl implements LibraryRepository {
     }
   }
 
-  /// Reads the ISRC tag from an audio file. Returns null if absent or unreadable.
-  /// MP3: TSRC frame (ID3v2); FLAC: ISRC= Vorbis comment.
-  /// TODO: populate once metadata_god exposes TSRC/ISRC= frames directly.
   Future<String?> _readIsrc(String filePath) async {
     return null;
   }
@@ -191,12 +184,8 @@ class LibraryRepositoryImpl implements LibraryRepository {
     final artist = _normalise(song.artist) ?? 'Unknown Artist';
     final existing = await _db.albumDao.getAlbumByNameAndArtist(albumName, artist);
     if (existing != null) {
-      // If album exists but has no artwork, update it with this track's artwork
       if (existing.artworkPath == null && artworkPath != null) {
-        await _db.albumDao.updateMetadata(
-          existing.id,
-          artworkPath: artworkPath,
-        );
+        await _db.albumDao.updateMetadata(existing.id, artworkPath: artworkPath);
       }
       return existing.id;
     }
@@ -218,8 +207,6 @@ class LibraryRepositoryImpl implements LibraryRepository {
     return value.trim();
   }
 
-  /// Normalises genre to consistent title-case so "rock", "Rock", and "ROCK"
-  /// all collapse to "Rock".
   String? _normaliseGenre(String? value) {
     final trimmed = _normalise(value);
     if (trimmed == null) return null;
@@ -232,11 +219,39 @@ class LibraryRepositoryImpl implements LibraryRepository {
     return dot > 0 ? name.substring(0, dot) : name;
   }
 
-  // ── Reads ──────────────────────────────────────────────────────────────────
+  // ── Inclusion mutations ────────────────────────────────────────────────────
 
-  Future<List<TrackModel>> _rowsToModels(
-    List<TracksTableData> rows,
-  ) async {
+  @override
+  Future<void> includeTrack(int trackId) =>
+      _db.trackDao.setTrackIncluded(trackId, true);
+
+  @override
+  Future<void> excludeTrack(int trackId) =>
+      _db.trackDao.setTrackIncluded(trackId, false);
+
+  @override
+  Future<void> includeAlbum(int albumId) =>
+      _db.trackDao.setAlbumTracksIncluded(albumId, true);
+
+  @override
+  Future<void> excludeAlbum(int albumId) =>
+      _db.trackDao.setAlbumTracksIncluded(albumId, false);
+
+  @override
+  Future<void> includeAllTracks() =>
+      _db.trackDao.setAllTracksIncluded(true);
+
+  @override
+  Future<void> excludeAllTracks() =>
+      _db.trackDao.setAllTracksIncluded(false);
+
+  @override
+  Future<int> getDiscoveredTrackCount() =>
+      _db.trackDao.getDiscoveredTrackCount();
+
+  // ── Library reads ──────────────────────────────────────────────────────────
+
+  Future<List<TrackModel>> _rowsToModels(List<TracksTableData> rows) async {
     final albumIds = rows.map((r) => r.albumId).whereType<int>().toSet();
     final albumNames = <int, String>{};
     final albumArtworkPaths = <int, String?>{};
@@ -270,6 +285,30 @@ class LibraryRepositoryImpl implements LibraryRepository {
   }
 
   @override
+  Stream<List<TrackModel>> watchAllDiscoveredTracks() {
+    return _db.trackDao.watchAllDiscoveredTracks().asyncMap(_rowsToModels);
+  }
+
+  @override
+  Stream<List<ng.AlbumModel>> watchDiscoveredAlbums() {
+    return _db.albumDao.watchAllDiscoveredAlbums().map(
+      (items) => items
+          .map(
+            (item) => ng.AlbumModel(
+              id: item.$1.id,
+              name: item.$1.name,
+              artist: item.$1.artist,
+              artworkPath: item.$1.artworkPath,
+              releaseYear: item.$1.releaseYear,
+              trackCount: item.$1.trackCount,
+              includedTrackCount: item.$2,
+            ),
+          )
+          .toList(),
+    );
+  }
+
+  @override
   Future<List<ng.AlbumModel>> getAlbums() async {
     final rows = await _db.albumDao.getAllAlbums();
     return rows.map(ng.AlbumModel.fromRow).toList();
@@ -290,9 +329,7 @@ class LibraryRepositoryImpl implements LibraryRepository {
 
   @override
   Stream<List<TrackModel>> watchTracksByAlbum(int albumId) {
-    return _db.trackDao
-        .watchTracksByAlbum(albumId)
-        .asyncMap(_rowsToModels);
+    return _db.trackDao.watchTracksByAlbum(albumId).asyncMap(_rowsToModels);
   }
 
   @override
@@ -307,26 +344,25 @@ class LibraryRepositoryImpl implements LibraryRepository {
     final artists = <ng.ArtistModel>[];
     for (final row in rows) {
       final albums = await _db.albumDao.getAlbumsByArtist(row.name);
-      artists.add(ng.ArtistModel(
-        id: row.id,
-        name: row.name,
-        albumCount: albums.length,
-      ));
+      if (albums.isNotEmpty) {
+        artists.add(ng.ArtistModel(id: row.id, name: row.name, albumCount: albums.length));
+      }
     }
     return artists;
   }
 
   @override
   Stream<List<ng.ArtistModel>> watchArtists() {
-    return _db.artistDao.watchAllArtists().asyncMap((rows) async {
+    // Derives from included-tracks stream for full reactivity: updates whenever
+    // track inclusion changes, not just when a scan completes.
+    return _db.trackDao.watchAllTracks().asyncMap((_) async {
+      final rows = await _db.artistDao.getAllArtists();
       final artists = <ng.ArtistModel>[];
       for (final row in rows) {
         final albums = await _db.albumDao.getAlbumsByArtist(row.name);
-        artists.add(ng.ArtistModel(
-          id: row.id,
-          name: row.name,
-          albumCount: albums.length,
-        ));
+        if (albums.isNotEmpty) {
+          artists.add(ng.ArtistModel(id: row.id, name: row.name, albumCount: albums.length));
+        }
       }
       return artists;
     });
@@ -353,6 +389,18 @@ class LibraryRepositoryImpl implements LibraryRepository {
         .toSet()
         .toList()
       ..sort();
+  }
+
+  @override
+  Stream<List<String>> watchGenres() {
+    return _db.trackDao.watchAllTracks().map(
+      (tracks) => tracks
+          .map((t) => _normaliseGenre(t.genre))
+          .whereType<String>()
+          .toSet()
+          .toList()
+          ..sort(),
+    );
   }
 
   @override

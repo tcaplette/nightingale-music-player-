@@ -9,6 +9,7 @@ import 'package:nightingale/features/library/models/album_model.dart';
 import 'package:nightingale/features/library/providers/library_providers.dart';
 import 'package:nightingale/features/library/services/album_metadata_fetch_service.dart';
 import 'package:nightingale/features/library/widgets/album_metadata_result_sheet.dart';
+import 'package:nightingale/features/library/widgets/albums_selection_sheet.dart';
 import 'package:nightingale/shared/components/artwork_thumbnail.dart';
 import 'package:nightingale/shared/components/empty_state_widget.dart';
 import 'package:nightingale/shared/components/skeleton_loader.dart';
@@ -29,29 +30,48 @@ class AlbumsView extends ConsumerWidget {
         subhead: e.toString(),
       ),
       data: (albums) {
-        if (albums.isEmpty) {
-          return RefreshIndicator(
-            onRefresh: () => ref.read(libraryScanProvider.notifier).scan(),
-            child: const EmptyStateWidget(
-              icon: Icons.album_outlined,
-              headline: 'No albums yet',
-              subhead: 'Albums will appear once your library is scanned.',
-            ),
-          );
-        }
-        return RefreshIndicator(
-          onRefresh: () => ref.read(libraryScanProvider.notifier).scan(),
-          child: ListView.builder(
-            itemCount: albums.length,
-            itemBuilder: (context, i) => _AlbumTile(
-              album: albums[i],
-              onTap: () => context.push('/library/albums/${albums[i].id}'),
-              onLongPress: () =>
-                  _onAlbumLongPress(context, ref, albums[i]),
-            ),
+        return Scaffold(
+          backgroundColor: Colors.transparent,
+          floatingActionButton: FloatingActionButton.extended(
+            onPressed: () => _openSelectionSheet(context),
+            icon: const Icon(Icons.add),
+            label: const Text('Add Albums'),
           ),
+          body: albums.isEmpty
+              ? RefreshIndicator(
+                  onRefresh: () => ref.read(libraryScanProvider.notifier).scan(),
+                  child: const EmptyStateWidget(
+                    icon: Icons.album_outlined,
+                    headline: 'No albums yet',
+                    subhead: 'Tap "Add Albums" to choose albums from your device.',
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: () => ref.read(libraryScanProvider.notifier).scan(),
+                  child: ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 88),
+                    itemCount: albums.length,
+                    itemBuilder: (context, i) => _AlbumTile(
+                      album: albums[i],
+                      onTap: () => context.push('/library/albums/${albums[i].id}'),
+                      onLongPress: () => _onAlbumLongPress(context, ref, albums[i]),
+                    ),
+                  ),
+                ),
         );
       },
+    );
+  }
+
+  void _openSelectionSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => const AlbumsSelectionSheet(),
     );
   }
 }

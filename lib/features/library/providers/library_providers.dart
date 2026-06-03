@@ -88,9 +88,29 @@ final artistsProvider = StreamProvider<List<ArtistModel>>((ref) {
   return sl<LibraryRepository>().watchArtists();
 });
 
-final genresProvider = FutureProvider<List<String>>((ref) {
+final genresProvider = StreamProvider<List<String>>((ref) {
   ref.watch(libraryScanProvider);
-  return sl<LibraryRepository>().getGenres();
+  return sl<LibraryRepository>().watchGenres();
+});
+
+// ── Discovery providers (all tracks/albums regardless of inclusion) ──────────
+
+final discoveredTracksProvider = StreamProvider<List<TrackModel>>((ref) {
+  ref.watch(libraryScanProvider);
+  return sl<LibraryRepository>().watchAllDiscoveredTracks();
+});
+
+final discoveredAlbumsProvider = StreamProvider<List<AlbumModel>>((ref) {
+  ref.watch(libraryScanProvider);
+  return sl<LibraryRepository>().watchDiscoveredAlbums();
+});
+
+/// Count of tracks discovered on device but not yet included in the library.
+/// Reactive: updates when the user selects or deselects tracks.
+final discoveredTrackCountProvider = StreamProvider<int>((ref) {
+  return sl<LibraryRepository>().watchAllDiscoveredTracks().map(
+    (tracks) => tracks.where((t) => !t.isIncluded).length,
+  );
 });
 
 final albumDetailProvider =

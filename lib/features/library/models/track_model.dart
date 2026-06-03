@@ -24,6 +24,7 @@ class TrackModel {
     this.isReachable = true,
     // Read-only from file tags; never user-entered
     this.isrc,
+    this.isIncluded = false,
   });
 
   final int id;
@@ -49,6 +50,7 @@ class TrackModel {
 
   // Metadata: read-only from TSRC (ID3v2) / ISRC= (Vorbis); never user-entered
   final String? isrc;
+  final bool isIncluded;
 
   Duration get duration => Duration(milliseconds: durationMs);
 
@@ -72,6 +74,7 @@ class TrackModel {
       albumArtworkPath: albumArtworkPath,
       dateAdded: row.dateAdded,
       isrc: row.isrc,
+      isIncluded: row.isIncluded,
     );
   }
 

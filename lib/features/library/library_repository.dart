@@ -6,30 +6,27 @@ import 'package:nightingale/features/library/models/track_model.dart';
 abstract interface class LibraryRepository {
   Future<ScanResult> scanLibrary();
 
-  Future<List<TrackModel>> getAllTracks();
+  // ── Library reads (isIncluded = true only) ─────────────────────────────────
 
+  Future<List<TrackModel>> getAllTracks();
   Stream<List<TrackModel>> watchAllTracks();
 
   Future<List<AlbumModel>> getAlbums();
-
   Stream<List<AlbumModel>> watchAlbums();
 
-  Future<List<TrackModel>> getTracksByAlbum(int albumId);
+  Future<List<ArtistModel>> getArtists();
+  Stream<List<ArtistModel>> watchArtists();
 
+  Future<List<String>> getGenres();
+  Stream<List<String>> watchGenres();
+
+  Future<List<TrackModel>> getTracksByAlbum(int albumId);
   Stream<List<TrackModel>> watchTracksByAlbum(int albumId);
 
   Future<AlbumModel?> getAlbumById(int albumId);
 
-  Future<List<ArtistModel>> getArtists();
-
-  Stream<List<ArtistModel>> watchArtists();
-
   Future<List<AlbumModel>> getAlbumsByArtist(String artist);
-
   Future<List<TrackModel>> getTracksByArtist(String artist);
-
-  Future<List<String>> getGenres();
-
   Future<List<TrackModel>> getTracksByGenre(String genre);
 
   Future<({
@@ -38,4 +35,19 @@ abstract interface class LibraryRepository {
     List<ArtistModel> artists,
   })>
   searchLibrary(String query);
+
+  // ── Discovery reads (all tracks regardless of isIncluded) ──────────────────
+
+  Stream<List<TrackModel>> watchAllDiscoveredTracks();
+  Stream<List<AlbumModel>> watchDiscoveredAlbums();
+  Future<int> getDiscoveredTrackCount();
+
+  // ── Inclusion mutations ────────────────────────────────────────────────────
+
+  Future<void> includeTrack(int trackId);
+  Future<void> excludeTrack(int trackId);
+  Future<void> includeAlbum(int albumId);
+  Future<void> excludeAlbum(int albumId);
+  Future<void> includeAllTracks();
+  Future<void> excludeAllTracks();
 }

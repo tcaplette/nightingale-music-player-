@@ -558,6 +558,21 @@ class $TracksTableTable extends TracksTable
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _isIncludedMeta = const VerificationMeta(
+    'isIncluded',
+  );
+  @override
+  late final GeneratedColumn<bool> isIncluded = GeneratedColumn<bool>(
+    'is_included',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_included" IN (0, 1))',
+    ),
+    clientDefault: () => false,
+  );
   static const VerificationMeta _dateAddedMeta = const VerificationMeta(
     'dateAdded',
   );
@@ -585,6 +600,7 @@ class $TracksTableTable extends TracksTable
     durationMs,
     artworkPath,
     isrc,
+    isIncluded,
     dateAdded,
   ];
   @override
@@ -690,6 +706,12 @@ class $TracksTableTable extends TracksTable
         isrc.isAcceptableOrUnknown(data['isrc']!, _isrcMeta),
       );
     }
+    if (data.containsKey('is_included')) {
+      context.handle(
+        _isIncludedMeta,
+        isIncluded.isAcceptableOrUnknown(data['is_included']!, _isIncludedMeta),
+      );
+    }
     if (data.containsKey('date_added')) {
       context.handle(
         _dateAddedMeta,
@@ -757,6 +779,10 @@ class $TracksTableTable extends TracksTable
         DriftSqlType.string,
         data['${effectivePrefix}isrc'],
       ),
+      isIncluded: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_included'],
+      )!,
       dateAdded: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}date_added'],
@@ -784,6 +810,7 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
   final int durationMs;
   final String? artworkPath;
   final String? isrc;
+  final bool isIncluded;
   final DateTime dateAdded;
   const TracksTableData({
     required this.id,
@@ -799,6 +826,7 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
     required this.durationMs,
     this.artworkPath,
     this.isrc,
+    required this.isIncluded,
     required this.dateAdded,
   });
   @override
@@ -833,6 +861,7 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
     if (!nullToAbsent || isrc != null) {
       map['isrc'] = Variable<String>(isrc);
     }
+    map['is_included'] = Variable<bool>(isIncluded);
     map['date_added'] = Variable<DateTime>(dateAdded);
     return map;
   }
@@ -866,6 +895,7 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
           ? const Value.absent()
           : Value(artworkPath),
       isrc: isrc == null && nullToAbsent ? const Value.absent() : Value(isrc),
+      isIncluded: Value(isIncluded),
       dateAdded: Value(dateAdded),
     );
   }
@@ -889,6 +919,7 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
       durationMs: serializer.fromJson<int>(json['durationMs']),
       artworkPath: serializer.fromJson<String?>(json['artworkPath']),
       isrc: serializer.fromJson<String?>(json['isrc']),
+      isIncluded: serializer.fromJson<bool>(json['isIncluded']),
       dateAdded: serializer.fromJson<DateTime>(json['dateAdded']),
     );
   }
@@ -909,6 +940,7 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
       'durationMs': serializer.toJson<int>(durationMs),
       'artworkPath': serializer.toJson<String?>(artworkPath),
       'isrc': serializer.toJson<String?>(isrc),
+      'isIncluded': serializer.toJson<bool>(isIncluded),
       'dateAdded': serializer.toJson<DateTime>(dateAdded),
     };
   }
@@ -927,6 +959,7 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
     int? durationMs,
     Value<String?> artworkPath = const Value.absent(),
     Value<String?> isrc = const Value.absent(),
+    bool? isIncluded,
     DateTime? dateAdded,
   }) => TracksTableData(
     id: id ?? this.id,
@@ -942,6 +975,7 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
     durationMs: durationMs ?? this.durationMs,
     artworkPath: artworkPath.present ? artworkPath.value : this.artworkPath,
     isrc: isrc.present ? isrc.value : this.isrc,
+    isIncluded: isIncluded ?? this.isIncluded,
     dateAdded: dateAdded ?? this.dateAdded,
   );
   TracksTableData copyWithCompanion(TracksTableCompanion data) {
@@ -971,6 +1005,9 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
           ? data.artworkPath.value
           : this.artworkPath,
       isrc: data.isrc.present ? data.isrc.value : this.isrc,
+      isIncluded: data.isIncluded.present
+          ? data.isIncluded.value
+          : this.isIncluded,
       dateAdded: data.dateAdded.present ? data.dateAdded.value : this.dateAdded,
     );
   }
@@ -991,6 +1028,7 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
           ..write('durationMs: $durationMs, ')
           ..write('artworkPath: $artworkPath, ')
           ..write('isrc: $isrc, ')
+          ..write('isIncluded: $isIncluded, ')
           ..write('dateAdded: $dateAdded')
           ..write(')'))
         .toString();
@@ -1011,6 +1049,7 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
     durationMs,
     artworkPath,
     isrc,
+    isIncluded,
     dateAdded,
   );
   @override
@@ -1030,6 +1069,7 @@ class TracksTableData extends DataClass implements Insertable<TracksTableData> {
           other.durationMs == this.durationMs &&
           other.artworkPath == this.artworkPath &&
           other.isrc == this.isrc &&
+          other.isIncluded == this.isIncluded &&
           other.dateAdded == this.dateAdded);
 }
 
@@ -1047,6 +1087,7 @@ class TracksTableCompanion extends UpdateCompanion<TracksTableData> {
   final Value<int> durationMs;
   final Value<String?> artworkPath;
   final Value<String?> isrc;
+  final Value<bool> isIncluded;
   final Value<DateTime> dateAdded;
   const TracksTableCompanion({
     this.id = const Value.absent(),
@@ -1062,6 +1103,7 @@ class TracksTableCompanion extends UpdateCompanion<TracksTableData> {
     this.durationMs = const Value.absent(),
     this.artworkPath = const Value.absent(),
     this.isrc = const Value.absent(),
+    this.isIncluded = const Value.absent(),
     this.dateAdded = const Value.absent(),
   });
   TracksTableCompanion.insert({
@@ -1078,6 +1120,7 @@ class TracksTableCompanion extends UpdateCompanion<TracksTableData> {
     this.durationMs = const Value.absent(),
     this.artworkPath = const Value.absent(),
     this.isrc = const Value.absent(),
+    this.isIncluded = const Value.absent(),
     this.dateAdded = const Value.absent(),
   }) : filePath = Value(filePath),
        title = Value(title);
@@ -1095,6 +1138,7 @@ class TracksTableCompanion extends UpdateCompanion<TracksTableData> {
     Expression<int>? durationMs,
     Expression<String>? artworkPath,
     Expression<String>? isrc,
+    Expression<bool>? isIncluded,
     Expression<DateTime>? dateAdded,
   }) {
     return RawValuesInsertable({
@@ -1111,6 +1155,7 @@ class TracksTableCompanion extends UpdateCompanion<TracksTableData> {
       if (durationMs != null) 'duration_ms': durationMs,
       if (artworkPath != null) 'artwork_path': artworkPath,
       if (isrc != null) 'isrc': isrc,
+      if (isIncluded != null) 'is_included': isIncluded,
       if (dateAdded != null) 'date_added': dateAdded,
     });
   }
@@ -1129,6 +1174,7 @@ class TracksTableCompanion extends UpdateCompanion<TracksTableData> {
     Value<int>? durationMs,
     Value<String?>? artworkPath,
     Value<String?>? isrc,
+    Value<bool>? isIncluded,
     Value<DateTime>? dateAdded,
   }) {
     return TracksTableCompanion(
@@ -1145,6 +1191,7 @@ class TracksTableCompanion extends UpdateCompanion<TracksTableData> {
       durationMs: durationMs ?? this.durationMs,
       artworkPath: artworkPath ?? this.artworkPath,
       isrc: isrc ?? this.isrc,
+      isIncluded: isIncluded ?? this.isIncluded,
       dateAdded: dateAdded ?? this.dateAdded,
     );
   }
@@ -1191,6 +1238,9 @@ class TracksTableCompanion extends UpdateCompanion<TracksTableData> {
     if (isrc.present) {
       map['isrc'] = Variable<String>(isrc.value);
     }
+    if (isIncluded.present) {
+      map['is_included'] = Variable<bool>(isIncluded.value);
+    }
     if (dateAdded.present) {
       map['date_added'] = Variable<DateTime>(dateAdded.value);
     }
@@ -1213,6 +1263,7 @@ class TracksTableCompanion extends UpdateCompanion<TracksTableData> {
           ..write('durationMs: $durationMs, ')
           ..write('artworkPath: $artworkPath, ')
           ..write('isrc: $isrc, ')
+          ..write('isIncluded: $isIncluded, ')
           ..write('dateAdded: $dateAdded')
           ..write(')'))
         .toString();
@@ -12151,6 +12202,7 @@ typedef $$TracksTableTableCreateCompanionBuilder =
       Value<int> durationMs,
       Value<String?> artworkPath,
       Value<String?> isrc,
+      Value<bool> isIncluded,
       Value<DateTime> dateAdded,
     });
 typedef $$TracksTableTableUpdateCompanionBuilder =
@@ -12168,6 +12220,7 @@ typedef $$TracksTableTableUpdateCompanionBuilder =
       Value<int> durationMs,
       Value<String?> artworkPath,
       Value<String?> isrc,
+      Value<bool> isIncluded,
       Value<DateTime> dateAdded,
     });
 
@@ -12261,6 +12314,11 @@ class $$TracksTableTableFilterComposer
 
   ColumnFilters<String> get isrc => $composableBuilder(
     column: $table.isrc,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isIncluded => $composableBuilder(
+    column: $table.isIncluded,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -12362,6 +12420,11 @@ class $$TracksTableTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get isIncluded => $composableBuilder(
+    column: $table.isIncluded,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get dateAdded => $composableBuilder(
     column: $table.dateAdded,
     builder: (column) => ColumnOrderings(column),
@@ -12448,6 +12511,11 @@ class $$TracksTableTableAnnotationComposer
   GeneratedColumn<String> get isrc =>
       $composableBuilder(column: $table.isrc, builder: (column) => column);
 
+  GeneratedColumn<bool> get isIncluded => $composableBuilder(
+    column: $table.isIncluded,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<DateTime> get dateAdded =>
       $composableBuilder(column: $table.dateAdded, builder: (column) => column);
 
@@ -12516,6 +12584,7 @@ class $$TracksTableTableTableManager
                 Value<int> durationMs = const Value.absent(),
                 Value<String?> artworkPath = const Value.absent(),
                 Value<String?> isrc = const Value.absent(),
+                Value<bool> isIncluded = const Value.absent(),
                 Value<DateTime> dateAdded = const Value.absent(),
               }) => TracksTableCompanion(
                 id: id,
@@ -12531,6 +12600,7 @@ class $$TracksTableTableTableManager
                 durationMs: durationMs,
                 artworkPath: artworkPath,
                 isrc: isrc,
+                isIncluded: isIncluded,
                 dateAdded: dateAdded,
               ),
           createCompanionCallback:
@@ -12548,6 +12618,7 @@ class $$TracksTableTableTableManager
                 Value<int> durationMs = const Value.absent(),
                 Value<String?> artworkPath = const Value.absent(),
                 Value<String?> isrc = const Value.absent(),
+                Value<bool> isIncluded = const Value.absent(),
                 Value<DateTime> dateAdded = const Value.absent(),
               }) => TracksTableCompanion.insert(
                 id: id,
@@ -12563,6 +12634,7 @@ class $$TracksTableTableTableManager
                 durationMs: durationMs,
                 artworkPath: artworkPath,
                 isrc: isrc,
+                isIncluded: isIncluded,
                 dateAdded: dateAdded,
               ),
           withReferenceMapper: (p0) => p0

@@ -18,5 +18,6 @@ class TracksTable extends Table {
   IntColumn get durationMs => integer().withDefault(const Constant(0))();
   TextColumn get artworkPath => text().nullable()();
   TextColumn get isrc => text().nullable()();
+  BoolColumn get isIncluded => boolean().clientDefault(() => false)();
   DateTimeColumn get dateAdded => dateTime().withDefault(currentDateAndTime)();
 }

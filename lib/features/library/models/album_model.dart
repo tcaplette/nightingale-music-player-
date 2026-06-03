@@ -8,6 +8,7 @@ class AlbumModel {
     this.artworkPath,
     this.releaseYear,
     required this.trackCount,
+    this.includedTrackCount = 0,
   });
 
   final int id;
@@ -16,6 +17,7 @@ class AlbumModel {
   final String? artworkPath;
   final int? releaseYear;
   final int trackCount;
+  final int includedTrackCount;
 
   factory AlbumModel.fromRow(AlbumsTableData row) {
     return AlbumModel(

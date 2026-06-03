@@ -81,7 +81,7 @@ class AppDatabase extends _$AppDatabase {
       : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 11;
+  int get schemaVersion => 12;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -148,6 +148,13 @@ class AppDatabase extends _$AppDatabase {
         // Phase 8: chunk-based federated audio cache.
         await m.createTable(chunksTable);
         await m.createTable(chunkManifestsTable);
+      }
+      if (from < 12) {
+        // User-controlled library import: existing tracks default to included
+        // so upgrading users don't lose their library.
+        await customStatement(
+          'ALTER TABLE tracks ADD COLUMN is_included INTEGER NOT NULL DEFAULT 1',
+        );
       }
     },
   );
