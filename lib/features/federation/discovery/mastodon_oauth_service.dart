@@ -8,7 +8,7 @@ import 'package:nightingale/features/onboarding/secure_storage_service.dart';
 
 const _tag = 'mastodon_oauth';
 const _redirectUri = 'nightingale://oauth/callback';
-const _scopes = 'read:follows read:accounts';
+const _scopes = 'read:follows read:accounts write:accounts';
 const _clientName = 'Nightingale';
 
 class MastodonAccountDetails {
@@ -196,6 +196,17 @@ class MastodonOAuthService {
 
   Future<String?> getStoredToken(String instance) =>
       _storage.getMastodonAccessToken(_normaliseInstance(instance));
+
+  /// Returns the stored instance + token for the connected Mastodon account,
+  /// or null if no account has been connected.
+  Future<({String instance, String token})?> getStoredCredentials() async {
+    final handle = await _storage.getMastodonHandle();
+    if (handle == null) return null;
+    final instance = _normaliseInstance(handle);
+    final token = await _storage.getMastodonAccessToken(instance);
+    if (token == null) return null;
+    return (instance: instance, token: token);
+  }
 
   Future<bool> isSignedIn(String instance) async {
     final token = await getStoredToken(instance);

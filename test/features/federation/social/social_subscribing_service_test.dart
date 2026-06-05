@@ -9,7 +9,10 @@ import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/core/federation/actor_resolver.dart';
 import 'package:nightingale/features/federation/delivery/activity_delivery_service.dart';
 import 'package:nightingale/features/federation/discovery/peer_exchange_service.dart';
+import 'package:nightingale/features/federation/library/remote_library_fetcher.dart';
+import 'package:nightingale/features/library/models/track_model.dart';
 import 'package:nightingale/features/node_identity/node_identity_repository.dart';
+import 'package:nightingale/core/federation/nightingale_actor_validator.dart';
 import 'package:nightingale/features/federation/social/social_subscribing_service.dart';
 
 AppDatabase _testDb() => AppDatabase(NativeDatabase.memory());
@@ -41,6 +44,14 @@ class _SpyPeerExchangeService implements PeerExchangeService {
   void enqueue(String actorUrl) {
     enqueuedUrls.add(actorUrl);
   }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FakeLibraryFetcher implements RemoteLibraryFetcher {
+  @override
+  Future<List<TrackModel>?> fetchLibrary(String actorUrl) async => null;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -104,13 +115,15 @@ void main() {
         delivery: delivery,
         identityRepo: _FakeIdentityRepo(),
         peerExchange: peerExchange,
+        libraryFetcher: _FakeLibraryFetcher(),
+        validator: const NightingaleActorValidator(),
       );
     });
 
     tearDown(() => db.close());
 
     test('followActor enqueues a peer exchange job', () async {
-      final actorUrl = 'https://remote.example/users/alice';
+      final actorUrl = 'http://remote.example:7777/users/alice';
       resolver.register(_makeActor(actorUrl));
 
       await svc.followActor(actorUrl);
@@ -119,7 +132,7 @@ void main() {
     });
 
     test('followActor sends a Follow activity to the target inbox', () async {
-      final actorUrl = 'https://remote.example/users/alice';
+      final actorUrl = 'http://remote.example:7777/users/alice';
       resolver.register(_makeActor(actorUrl));
 
       await svc.followActor(actorUrl);
@@ -130,7 +143,7 @@ void main() {
     });
 
     test('followActor is idempotent — does not re-enqueue if already following', () async {
-      final actorUrl = 'https://remote.example/users/alice';
+      final actorUrl = 'http://remote.example:7777/users/alice';
       resolver.register(_makeActor(actorUrl));
 
       await svc.followActor(actorUrl);
@@ -141,7 +154,7 @@ void main() {
     });
 
     test('unfollowActor does NOT enqueue a peer exchange job', () async {
-      final actorUrl = 'https://remote.example/users/alice';
+      final actorUrl = 'http://remote.example:7777/users/alice';
       resolver.register(_makeActor(actorUrl));
 
       // Follow first so the DB row exists

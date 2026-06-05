@@ -138,9 +138,9 @@ class _AlbumList extends ConsumerWidget {
             final fullyIncluded = album.includedTrackCount == album.trackCount &&
                 album.trackCount > 0;
             if (fullyIncluded) {
-              await repo.excludeAlbum(album.id);
+              await repo.excludeAlbum(album.name, album.artist);
             } else {
-              await repo.includeAlbum(album.id);
+              await repo.includeAlbum(album.name, album.artist);
             }
           },
         );
@@ -167,7 +167,6 @@ class _AlbumRow extends StatelessWidget {
 
     Widget indicator;
     if (partiallyIncluded) {
-      // Indeterminate state: a dashed border checkbox icon
       indicator = Icon(
         Icons.indeterminate_check_box_outlined,
         color: scheme.primary,

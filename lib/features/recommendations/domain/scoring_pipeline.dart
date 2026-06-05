@@ -15,6 +15,7 @@ class ScoringInput {
     required this.localArtistsNormalized,
     required this.ownedFingerprints,
     required this.followingCount,
+    this.seedArtist,
   });
 
   final Map<String, double> localScores;
@@ -23,6 +24,7 @@ class ScoringInput {
   final Set<String> localArtistsNormalized;
   final Set<String> ownedFingerprints;
   final int followingCount;
+  final String? seedArtist;
 }
 
 class ScoringPipeline {
@@ -62,7 +64,20 @@ class ScoringPipeline {
       ownedFingerprints: input.ownedFingerprints,
     );
 
-    return _merge([trendingResults, affinityResults, newFromKnownResults]);
+    var merged = _merge([trendingResults, affinityResults, newFromKnownResults]);
+
+    if (input.seedArtist != null) {
+      final seed = input.seedArtist!.toLowerCase();
+      merged = (merged.map((r) {
+        if (r.trackArtist.toLowerCase() == seed) {
+          return r.copyWith(score: r.score * 2.0);
+        }
+        return r;
+      }).toList()
+        ..sort((a, b) => b.score.compareTo(a.score)));
+    }
+
+    return merged;
   }
 
   Map<String, double> computeAffinityMatrix(ScoringInput input) =>

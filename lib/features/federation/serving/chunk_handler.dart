@@ -18,8 +18,9 @@ Future<Response> chunkHandler(Request request, String hash) async {
 
   // ── Power policy ─────────────────────────────────────────────────────────
   if (!await seedingPolicy.canSeed()) {
-    AppLogger.debug(
-      'Chunk request denied by power policy for hash=$hash',
+    final reason = await seedingPolicy.status();
+    AppLogger.warning(
+      'Chunk request denied by power policy: ${reason.label} (hash=$hash)',
       tag: _tag,
     );
     return Response(

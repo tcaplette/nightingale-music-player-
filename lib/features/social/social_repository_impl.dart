@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 import 'package:nightingale/core/activitypub/models/ap_activity.dart';
 import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/core/federation/actor_resolver.dart';
+import 'package:nightingale/core/federation/nightingale_actor_validator.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
 import 'package:nightingale/core/repositories/social_repository.dart';
 import 'package:nightingale/features/federation/delivery/activity_delivery_service.dart';
@@ -19,26 +20,64 @@ class SocialRepositoryImpl implements SocialRepository {
     required ActorResolver actorResolver,
     required NodeIdentityRepository identityRepo,
     required ModerationRepository moderation,
+    required NightingaleActorValidator validator,
   })  : _db = db,
         _delivery = delivery,
         _actorResolver = actorResolver,
         _identityRepo = identityRepo,
-        _moderation = moderation;
+        _moderation = moderation,
+        _validator = validator;
 
   final AppDatabase _db;
   final ActivityDeliveryService _delivery;
   final ActorResolver _actorResolver;
   final NodeIdentityRepository _identityRepo;
   final ModerationRepository _moderation;
+  final NightingaleActorValidator _validator;
 
   // ── Outgoing follows ──────────────────────────────────────────────────────
 
   @override
-  Future<void> followActor(String actorUrl) async {
+  Future<FollowResult> followActor(String actorUrl) async {
+    // Guard against re-following the same peer across identity changes.
+    // Uniqueness is on remote_actor_url alone — local identity may differ
+    // after a reinstall but the relationship is the same.
+    final existing = await (_db.select(_db.followsTable)
+          ..where((t) => t.remoteActorUrl.equals(actorUrl)))
+        .getSingleOrNull();
+    if (existing != null) {
+      AppLogger.info('followActor: already following $actorUrl — skipping', tag: _tag);
+      return AlreadyFollowing();
+    }
+
     final myActorUrl = await _identityRepo.getActorUrl();
 
     // Resolve actor to get inbox and privacy setting
     final resolved = await _actorResolver.resolve(actorUrl);
+    AppLogger.debug('followActor: resolve($actorUrl) → ${resolved.runtimeType}', tag: _tag);
+    if (resolved is ResolveOk) {
+      final actor = resolved.actor;
+      AppLogger.debug(
+        'followActor: resolved actor id=${actor.id} '
+        'nightingalePublicAddress=${actor.nightingalePublicAddress} '
+        'inbox=${actor.inbox}',
+        tag: _tag,
+      );
+      if (!_validator.isNightingalePeer(actor)) {
+        AppLogger.warning(
+          'followActor: $actorUrl rejected — not a Nightingale peer '
+          '(id=${actor.id} nightingalePublicAddress=${actor.nightingalePublicAddress})',
+          tag: _tag,
+        );
+        return NotANightingalePeer(actor);
+      }
+    } else {
+      AppLogger.warning(
+        'followActor: could not resolve $actorUrl ($resolved) — proceeding with pending_delivery state',
+        tag: _tag,
+      );
+    }
+
     final inbox = resolved is ResolveOk ? (resolved.actor.inbox) : null;
     final manuallyApproves = resolved is ResolveOk
         ? (resolved.actor.manuallyApprovesFollowers ?? false)
@@ -98,6 +137,7 @@ class SocialRepositoryImpl implements SocialRepository {
     }
 
     AppLogger.info('Follow sent to $actorUrl (state=$initialState)', tag: _tag);
+    return FollowSuccess();
   }
 
   @override

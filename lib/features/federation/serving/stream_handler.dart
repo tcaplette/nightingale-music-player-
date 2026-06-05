@@ -48,6 +48,10 @@ Future<Response> streamHandler(Request request, String trackId) async {
 
   // ── Privacy Check ────────────────────────────────────────────────────────
   final scope = libraryPublisher.sharingScope;
+  AppLogger.info(
+    'Stream: request trackId=$trackId scope=${scope.name} requester=${requesterActorUrl ?? "anonymous"}',
+    tag: _tag,
+  );
   if (scope == SharingScope.private) {
     return Response.forbidden('Library is private');
   }
@@ -82,6 +86,10 @@ Future<Response> streamHandler(Request request, String trackId) async {
     AppLogger.error('Track file not found: ${track.filePath}', tag: _tag);
     return Response.notFound('Audio file not found');
   }
+  AppLogger.info(
+    'Stream: serving "${track.title}" by ${track.artist} (${file.lengthSync()} bytes) range=${request.headers['range'] ?? "full"}',
+    tag: _tag,
+  );
 
   // Handle range requests for seeking
   final rangeHeader = request.headers['range'];

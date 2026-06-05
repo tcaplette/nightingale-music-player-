@@ -166,8 +166,11 @@ class _SearchResults extends ConsumerWidget {
                   ),
                   title: Text(album.name, style: textTheme.bodyLarge),
                   subtitle: Text(album.artist, style: textTheme.labelMedium),
-                  onTap: () =>
-                      context.push('/library/albums/${album.id}'),
+                  onTap: () => context.push(
+                    '/library/albums/'
+                    '${Uri.encodeComponent(album.artist)}/'
+                    '${Uri.encodeComponent(album.name)}',
+                  ),
                 ),
             ],
             if (results.artists.isNotEmpty) ...[

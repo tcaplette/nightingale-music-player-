@@ -8,6 +8,7 @@ import 'package:nightingale/core/activitypub/models/ap_public_key.dart';
 import 'package:nightingale/core/di/service_locator.dart' show sl;
 import 'package:nightingale/features/federation/discovery/mastodon_bridge_service.dart';
 import 'package:nightingale/features/federation/screens/mastodon_import_screen.dart';
+import 'package:nightingale/core/repositories/social_repository.dart';
 import 'package:nightingale/features/social/providers/social_graph_notifier.dart';
 import 'package:nightingale/features/onboarding/secure_storage_service.dart';
 import 'package:nightingale/shared/theme/app_theme.dart';
@@ -18,12 +19,13 @@ class _StubSocialGraphNotifier extends StateNotifier<SocialGraphState>
   _StubSocialGraphNotifier() : super(const SocialGraphState());
 
   @override
-  Future<void> followActor(String actorUrl) async {
+  Future<FollowResult> followActor(String actorUrl) async {
     state = SocialGraphState(
       following: [
         ...state.following,
       ],
     );
+    return FollowSuccess();
   }
 
   @override

@@ -5,6 +5,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 import 'package:metadata_god/metadata_god.dart' as mg;
+import 'package:on_audio_query/on_audio_query.dart' hide AlbumModel;
 import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
 import 'package:nightingale/features/library/models/album_model.dart';
@@ -82,24 +83,47 @@ class AlbumMetadataFetchService {
   AlbumMetadataFetchService({required AppDatabase db}) : _db = db;
 
   final AppDatabase _db;
+  final OnAudioQuery _audioQuery = OnAudioQuery();
 
   // ── Public API ────────────────────────────────────────────────────────────
 
-  /// Persists corrected album name and artist to the DB.
-  /// Called before a search so the album record stays in sync with what the
-  /// user typed in the fetch sheet.
+  /// Renames the album grouping key across all track rows and writes the
+  /// updated album name and artist to each track's ID3 tags on disk.
   Future<void> saveAlbumIdentity(
-    int albumId, {
-    required String name,
-    required String artist,
-  }) =>
-      _db.albumDao.updateNameAndArtist(albumId, name: name, artist: artist);
+    String albumName,
+    String? albumArtist, {
+    required String newName,
+    required String newArtist,
+  }) async {
+    await _db.trackDao.updateAlbumIdentity(albumName, albumArtist, newName, newArtist);
+    final rows = await _db.trackDao.getTracksByAlbumName(newName, newArtist);
+    for (final row in rows) {
+      final track = TrackModel.fromRow(row);
+      try {
+        final existing = await mg.MetadataGod.getMetadata(track.filePath);
+        final metadata = mg.Metadata(
+          title: existing?.title,
+          artist: newArtist,
+          album: newName,
+          albumArtist: newArtist,
+          genre: existing?.genre,
+          year: existing?.year,
+          trackNumber: existing?.trackNumber,
+          discNumber: existing?.discNumber,
+          picture: existing?.picture,
+        );
+        await mg.MetadataGod.writeMetadata(track.filePath, metadata);
+        await _audioQuery.scanMedia(track.filePath);
+      } catch (e) {
+        AppLogger.warning('saveAlbumIdentity tag write failed for "${track.title}": $e', tag: _tag);
+      }
+    }
+  }
 
   /// Looks up album metadata and downloads artwork for preview — no writes.
   Future<AlbumPreviewResult?> previewAlbum(
     String albumName,
-    String artist,
-    int albumId, {
+    String artist, {
     int? expectedTrackCount,
   }) async {
     final result = await _lookupRelease(
@@ -110,8 +134,11 @@ class AlbumMetadataFetchService {
     if (result == null) return null;
     String? artworkPath;
     if (result.artworkUrl != null) {
-      artworkPath =
-          await _lookup.downloadArtwork(result.artworkUrl!, albumId);
+      artworkPath = await _lookup.downloadArtwork(
+        result.artworkUrl!,
+        // Use a sanitized file name derived from the album name
+        albumName.replaceAll(RegExp(r'[^\w\s-]'), '').trim().hashCode,
+      );
     }
     return AlbumPreviewResult(lookup: result, artworkPath: artworkPath);
   }
@@ -174,26 +201,15 @@ class AlbumMetadataFetchService {
     );
 
     // 2. Use preloaded artwork from preview if available; otherwise download.
-    // Reusing the preview artwork avoids a second Cover Art Archive round-trip
-    // (which can fail or return a different result).
     String? artworkPath = preloadedArtworkPath;
     if (artworkPath == null && albumResult.artworkUrl != null) {
       artworkPath = await _lookup.downloadArtwork(
         albumResult.artworkUrl!,
-        album.id,
+        resolvedName.replaceAll(RegExp(r'[^\w\s-]'), '').trim().hashCode,
       );
     }
 
-    // 3. Update album row with all resolved values (name, artist, artwork, year)
-    await _updateAlbumRecord(
-      album,
-      albumResult,
-      artworkPath,
-      resolvedName: resolvedName,
-      resolvedArtist: resolvedArtist,
-    );
-
-    // 4. Match and apply per track
+    // 3. Match and apply per track
     if (albumResult.tracks.isNotEmpty) {
       debugPrint('[$_tag] Local tracks (${tracks.length}):');
       for (final t in tracks) {
@@ -241,7 +257,6 @@ class AlbumMetadataFetchService {
       }
 
       // Unmatched tracks still get album-level fields (artist, artwork, genre, year).
-      // We couldn't confirm their individual track data but they belong to this album.
       for (final track in unmatchedList) {
         try {
           await _writeFields(
@@ -295,9 +310,6 @@ class AlbumMetadataFetchService {
     int? expectedTrackCount,
   }) async {
     try {
-      // Lowercase both values — MusicBrainz Lucene is technically case-insensitive
-      // but mixed-case inputs can produce zero results in practice. Escaping
-      // internal quotes prevents malformed Lucene syntax.
       final safeAlbum = albumName.toLowerCase().replaceAll('"', r'\"');
       final safeArtist = artist.toLowerCase().replaceAll('"', r'\"');
       final query = Uri.encodeComponent(
@@ -334,17 +346,13 @@ class AlbumMetadataFetchService {
         return await _lookupItunesAlbum(albumName, artist);
       }
 
-      // Pick best release: score by track count match + official status
       final release = _pickBestRelease(releases, expectedTrackCount);
 
       final mbid = release['id'] as String?;
       final releaseYear = _parseYear(release['date'] as String?);
       final mbAlbumName = release['title'] as String?;
-
-      // Artist from artist-credit array: join all credited names
       final mbArtist = _extractArtistCredit(release);
 
-      // Genre from release tags (highest-count tag wins)
       final tags =
           (release['tags'] as List?)?.cast<Map<String, dynamic>>();
       String? genre;
@@ -356,8 +364,6 @@ class AlbumMetadataFetchService {
         genre = sorted.first['name'] as String?;
       }
 
-      // Track listing from search result — the search API sometimes omits
-      // recordings even with inc=recordings. If empty, fetch the full release.
       var mbTracks = _extractTrackListing(release);
       if (mbTracks.isEmpty && mbid != null) {
         mbTracks = await _fetchFullTrackListing(mbid) ?? [];
@@ -367,13 +373,11 @@ class AlbumMetadataFetchService {
         );
       }
 
-      // Artwork from Cover Art Archive
       String? artworkUrl;
       if (mbid != null) {
         artworkUrl = await _fetchReleaseArtwork(mbid);
       }
 
-      // Merge iTunes if any album-level field is missing
       final mbComplete =
           genre != null && releaseYear != null && artworkUrl != null;
       if (!mbComplete) {
@@ -439,10 +443,6 @@ class AlbumMetadataFetchService {
     return best ?? releases.first;
   }
 
-  /// Counts the total number of tracks across all media in a release.
-  /// Uses the `track-count` field when available, falls back to counting the
-  /// `tracks` array — the search API sometimes omits the field but includes
-  /// the full track list.
   static int _countReleaseTracks(Map<String, dynamic> release) {
     final media = (release['media'] as List?)?.cast<Map<String, dynamic>>();
     if (media == null || media.isEmpty) return 0;
@@ -453,8 +453,6 @@ class AlbumMetadataFetchService {
     });
   }
 
-  /// Extracts artist name(s) from a MusicBrainz `artist-credit` array.
-  /// Joins multiple credits with " & ".
   static String? _extractArtistCredit(Map<String, dynamic> release) {
     final credits =
         (release['artist-credit'] as List?)?.cast<Map<String, dynamic>>();
@@ -484,7 +482,7 @@ class AlbumMetadataFetchService {
         final t = discTracks[i];
         final trackNumber = int.tryParse(t['number']?.toString() ?? '') ??
             (t['position'] as num?)?.toInt() ??
-            (i + 1); // 1-indexed fallback when MB omits number/position
+            (i + 1);
         final durationMs = (t['length'] as num?)?.toInt() ?? 0;
         final title = t['title'] as String? ?? '';
         if (title.isEmpty) continue;
@@ -499,8 +497,6 @@ class AlbumMetadataFetchService {
     return result;
   }
 
-  /// Fetches the full release from MusicBrainz by MBID and returns its track
-  /// listing. Used as a fallback when the search result omits recordings.
   Future<List<MbTrackEntry>?> _fetchFullTrackListing(String mbid) async {
     try {
       await Future.delayed(const Duration(milliseconds: 1100));
@@ -527,7 +523,6 @@ class AlbumMetadataFetchService {
 
   Future<String?> _fetchReleaseArtwork(String mbid) async {
     try {
-      // MusicBrainz recommends a 1-second delay between requests
       await Future.delayed(const Duration(milliseconds: 1100));
       final uri =
           Uri.parse('https://coverartarchive.org/release/$mbid');
@@ -613,8 +608,6 @@ class AlbumMetadataFetchService {
     t = t.replaceAll(RegExp(r'\(ft\.?[^)]*\)', caseSensitive: false), '');
     t = t.replaceAll(RegExp(r'\bfeat\.?\s+\S+', caseSensitive: false), '');
     t = t.replaceAll(RegExp(r'\bft\.?\s+\S+', caseSensitive: false), '');
-    // unicode: true keeps accented letters (é, ü, ñ …) so "Beyoncé" and
-    // "Beyonce" don't silently collapse to different strings.
     t = t.replaceAll(RegExp(r'[^\w\s]', unicode: true), '').trim();
     t = t.replaceAll(RegExp(r'\s+'), ' ');
     return t;
@@ -626,14 +619,10 @@ class AlbumMetadataFetchService {
         local.trackNumber == candidate.trackNumber) {
       score += 3;
     }
-    // Skip duration scoring when MusicBrainz has no duration (returns 0).
-    // 10 s tolerance handles YouTube rips, different editions, and pre-gap variance.
     if (candidate.durationMs > 0 &&
         (local.durationMs - candidate.durationMs).abs() <= 10000) {
       score += 2;
     }
-    // Substring match handles "Artist - 'Song Title' (Full Album Stream)" patterns
-    // where the MB title is a clean substring of the YouTube-style local title.
     final localNorm = _normalizeTitle(local.title);
     final candNorm = _normalizeTitle(candidate.title);
     if (localNorm.contains(candNorm) || candNorm.contains(localNorm)) {
@@ -668,8 +657,6 @@ class AlbumMetadataFetchService {
     final stillUnmatched = <TrackModel>[];
     final claimedPass1 = <MbTrackEntry>{};
 
-    // Pass 1: score-based matching (duration + title ≥ 3)
-    // Only consider unclaimed MB tracks so each MB entry is assigned at most once.
     for (final track in tracks) {
       var bestScore = 0;
       MbTrackEntry? bestCandidate;
@@ -702,10 +689,6 @@ class AlbumMetadataFetchService {
       }
     }
 
-    // Pass 2: title-only fallback for anything that didn't score high enough.
-    // If exactly one unclaimed MB track's title is a substring of (or contains)
-    // the local title, assign it — this handles YouTube rips where duration
-    // varies but the title is unambiguous.
     final claimedMb = matched.values.toSet();
     final finalUnmatched = <TrackModel>[];
 
@@ -754,6 +737,8 @@ class AlbumMetadataFetchService {
     final effectiveYear = track.releaseYear ?? newYear;
     final effectiveArtworkPath = newArtworkPath ?? track.artworkPath;
     final effectiveTrackNumber = newTrackNumber ?? track.trackNumber;
+    // ignore: avoid_print
+    print('[_writeFields] "${track.title}" newTrackNumber=$newTrackNumber track.trackNumber=${track.trackNumber} → effective=$effectiveTrackNumber');
     final effectiveDiscNumber = newDiscNumber ?? track.discNumber;
 
     mg.Image? picture;
@@ -783,13 +768,14 @@ class AlbumMetadataFetchService {
 
     try {
       await mg.MetadataGod.writeMetadata(track.filePath, metadata);
+      await _audioQuery.scanMedia(track.filePath);
     } catch (e) {
       final msg = e.toString();
       if (msg.contains('NoTag')) {
-        // File has no ID3 container — stamp a minimal header and retry.
         try {
           await stampId3Header(track.filePath);
           await mg.MetadataGod.writeMetadata(track.filePath, metadata);
+          await _audioQuery.scanMedia(track.filePath);
           debugPrint('[$_tag] Created ID3 tag for "${track.title}"');
         } catch (e2) {
           AppLogger.warning('Tag write failed after stamp for "${track.title}": $e2', tag: _tag);
@@ -804,6 +790,8 @@ class AlbumMetadataFetchService {
     await _db.trackDao.updateTrack(
       track.toUpdateCompanion().copyWith(
         artist: Value(effectiveArtist),
+        albumName: Value(effectiveAlbum),
+        albumArtist: Value(effectiveAlbumArtist),
         genre: Value(effectiveGenre),
         releaseYear: Value(effectiveYear),
         artworkPath: Value(effectiveArtworkPath),
@@ -811,41 +799,6 @@ class AlbumMetadataFetchService {
         discNumber: Value(effectiveDiscNumber),
       ),
     );
-  }
-
-  Future<void> _updateAlbumRecord(
-    AlbumModel album,
-    AlbumLookupResult result,
-    String? artworkPath, {
-    required String resolvedName,
-    required String resolvedArtist,
-  }) async {
-    // Prefer freshly fetched artwork over whatever the scanner extracted.
-    final effectiveArtwork = artworkPath ?? album.artworkPath;
-    final effectiveYear = album.releaseYear ?? result.releaseYear;
-
-    // If the user left the artist as an "unknown" placeholder, use the artist
-    // the lookup actually found instead of persisting the placeholder.
-    final effectiveArtist = _isUnknown(resolvedArtist)
-        ? (result.artist ?? resolvedArtist)
-        : resolvedArtist;
-
-    // Same for album name — if the user left it blank/unknown, use lookup result.
-    final effectiveName = _isUnknown(resolvedName)
-        ? (result.albumName ?? resolvedName)
-        : resolvedName;
-
-    try {
-      await _db.albumDao.updateAfterFetch(
-        album.id,
-        name: effectiveName,
-        artist: effectiveArtist,
-        artworkPath: effectiveArtwork,
-        releaseYear: effectiveYear,
-      );
-    } catch (e) {
-      AppLogger.warning('Failed to update album record: $e', tag: _tag);
-    }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

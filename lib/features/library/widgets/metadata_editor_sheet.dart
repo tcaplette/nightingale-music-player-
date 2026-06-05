@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:metadata_god/metadata_god.dart' as mg;
+import 'package:on_audio_query/on_audio_query.dart';
 import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/core/di/service_locator.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
@@ -68,16 +69,6 @@ class _MetadataEditorSheetState extends State<_MetadataEditorSheet> {
         text: widget.track.releaseYear?.toString() ?? '',
       ),
     };
-    if (widget.track.albumName == null && widget.track.albumId != null) {
-      sl<AppDatabase>()
-          .albumDao
-          .getAlbumById(widget.track.albumId!)
-          .then((album) {
-        if (mounted && album != null) {
-          _controllers['album']!.text = album.name;
-        }
-      });
-    }
   }
 
   @override
@@ -269,8 +260,10 @@ class _MetadataEditorSheetState extends State<_MetadataEditorSheet> {
       picture: picture,
     );
 
+    final audioQuery = OnAudioQuery();
     try {
       await mg.MetadataGod.writeMetadata(widget.track.filePath, metadata);
+      await audioQuery.scanMedia(widget.track.filePath);
     } on FileSystemException catch (e) {
       AppLogger.warning('Tag write failed (filesystem): $e', tag: _tag);
       setState(() {
@@ -285,6 +278,7 @@ class _MetadataEditorSheetState extends State<_MetadataEditorSheet> {
         try {
           await stampId3Header(widget.track.filePath);
           await mg.MetadataGod.writeMetadata(widget.track.filePath, metadata);
+          await audioQuery.scanMedia(widget.track.filePath);
         } catch (e2) {
           AppLogger.warning('Tag write failed after stamp: $e2', tag: _tag);
           setState(() {
@@ -308,26 +302,10 @@ class _MetadataEditorSheetState extends State<_MetadataEditorSheet> {
       final db = sl<AppDatabase>();
       final effectiveArtist = artist.isEmpty ? widget.track.artist : artist;
 
-      int? resolvedAlbumId = widget.track.albumId;
-      if (album.isNotEmpty) {
-        final existing =
-            await db.albumDao.getAlbumByNameAndArtist(album, effectiveArtist);
-        if (existing != null) {
-          resolvedAlbumId = existing.id;
-        } else {
-          resolvedAlbumId = await db.albumDao.upsertAlbum(
-            AlbumsTableCompanion.insert(
-              name: album,
-              artist: Value(effectiveArtist),
-            ),
-          );
-        }
-      }
-
       final updated = widget.track.toUpdateCompanion().copyWith(
         title: Value(title.isEmpty ? widget.track.title : title),
         artist: Value(effectiveArtist),
-        albumId: Value(resolvedAlbumId),
+        albumName: Value(album.isEmpty ? null : album),
         albumArtist: Value(albumArtist.isEmpty ? null : albumArtist),
         genre: Value(genre.isEmpty ? null : genre),
         releaseYear: Value(year),

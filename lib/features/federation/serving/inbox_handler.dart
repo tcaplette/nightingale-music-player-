@@ -13,6 +13,9 @@ import 'package:nightingale/features/federation/moderation/rate_limiter.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
 import 'package:nightingale/core/repositories/activity_repository.dart';
 import 'package:nightingale/core/repositories/social_repository.dart';
+import 'package:nightingale/core/activitypub/models/ap_activity.dart' show ApPeerAddress, ApRelayRequest;
+import 'package:nightingale/features/federation/delivery/circuit_relay_client.dart';
+import 'package:nightingale/features/federation/nat/hole_punch_service.dart';
 import 'package:nightingale/features/federation/social/social_subscribing_service.dart';
 
 const _sanitizer = ActivitySanitizer();
@@ -196,7 +199,25 @@ Future<Response> inboxHandler(Request request, String username) async {
     );
   }
 
-  // 14. Store
+  // 14. Route hole-punch and relay activities before storing.
+  if (activity is ApPeerAddress) {
+    sl<HolePunchService>().handleIncomingPeerAddress(activity);
+  }
+  if (activity is ApRelayRequest && activity.object is Map) {
+    final obj = activity.object as Map;
+    final sessionId = obj['sessionId'] as String?;
+    final relayAddress = obj['relayAddress'] as String?;
+    if (sessionId != null && relayAddress != null) {
+      sl<CircuitRelayClient>()
+          .connectAsRelayServer(
+            sessionId: sessionId,
+            relayAddress: relayAddress,
+          )
+          .ignore();
+    }
+  }
+
+  // 15. Store
   await db.into(db.inboxActivitiesTable).insert(
         InboxActivitiesTableCompanion.insert(
           activityId: activity.id,

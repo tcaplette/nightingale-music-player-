@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nightingale/core/database/app_database.dart';
@@ -53,7 +54,11 @@ class AlbumsView extends ConsumerWidget {
                     itemCount: albums.length,
                     itemBuilder: (context, i) => _AlbumTile(
                       album: albums[i],
-                      onTap: () => context.push('/library/albums/${albums[i].id}'),
+                      onTap: () => context.push(
+                        '/library/albums/'
+                        '${Uri.encodeComponent(albums[i].artist)}/'
+                        '${Uri.encodeComponent(albums[i].name)}',
+                      ),
                       onLongPress: () => _onAlbumLongPress(context, ref, albums[i]),
                     ),
                   ),
@@ -81,7 +86,6 @@ Future<void> _onAlbumLongPress(
   WidgetRef ref,
   AlbumModel album,
 ) async {
-  // Show the fetch sheet — user edits fields, previews result, then confirms
   final confirmed = await showModalBottomSheet<({String albumName, String artist, String? artworkPath})?>(
     context: context,
     isScrollControlled: true,
@@ -94,14 +98,27 @@ Future<void> _onAlbumLongPress(
 
   if (confirmed == null || !context.mounted) return;
 
-  // Stream provider auto-updates, so just read the current value.
-  final tracks = await ref.read(albumTracksProvider(album.id).future);
+  // Request storage write permission before attempting to write ID3 tags.
+  if (Platform.isAndroid) {
+    if (!await Permission.manageExternalStorage.isGranted) {
+      final result = await Permission.manageExternalStorage.request();
+      if (!result.isGranted && !await Permission.storage.request().isGranted) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Storage permission required to write metadata to files.'),
+          ));
+        }
+        return;
+      }
+    }
+  }
+
+  final key = (albumName: album.name, albumArtist: album.artist);
+  final tracks = await ref.read(albumTracksProvider(key).future);
   if (tracks.isEmpty || !context.mounted) return;
 
-  // Capture navigator before async gap
   final navigator = Navigator.of(context, rootNavigator: true);
 
-  // Progress dialog
   showDialog<void>(
     context: context,
     barrierDismissible: false,
@@ -124,13 +141,10 @@ Future<void> _onAlbumLongPress(
     preloadedArtworkPath: confirmed.artworkPath,
   );
 
-  // Dismiss progress, show result sheet, then invalidate providers.
-  // albumsProvider is invalidated so the tile reflects updated name/artist/artwork.
-  // Order matters — invalidate after navigation to avoid the nav-lock crash.
   navigator.pop();
   if (!context.mounted) return;
   showAlbumMetadataResultSheet(context, result);
-  ref.invalidate(albumDetailProvider(album.id));
+  ref.invalidate(albumDetailProvider(key));
   ref.invalidate(albumsProvider);
 }
 
@@ -195,7 +209,10 @@ class _AlbumFetchSheetState extends State<_AlbumFetchSheet> {
     setState(() => _deleting = true);
     try {
       final db = sl<AppDatabase>();
-      final tracks = await db.trackDao.getTracksByAlbum(widget.album.id);
+      final tracks = await db.trackDao.getTracksByAlbumName(
+        widget.album.name,
+        widget.album.artist,
+      );
       for (final track in tracks) {
         final file = File(track.filePath);
         if (await file.exists()) await file.delete();
@@ -203,7 +220,6 @@ class _AlbumFetchSheetState extends State<_AlbumFetchSheet> {
       await db.trackDao.deleteTracksWithFilePaths(
         tracks.map((t) => t.filePath).toSet(),
       );
-      await db.albumDao.deleteAlbumById(widget.album.id);
     } catch (e) {
       if (mounted) setState(() => _deleting = false);
       return;
@@ -223,22 +239,20 @@ class _AlbumFetchSheetState extends State<_AlbumFetchSheet> {
 
     final service = sl<AlbumMetadataFetchService>();
 
-    // Persist corrected name/artist to the album record before searching so
-    // the DB stays in sync with what the user typed.
     final nameChanged = name != widget.album.name;
     final artistChanged = artist != widget.album.artist;
     if (nameChanged || artistChanged) {
       await service.saveAlbumIdentity(
-        widget.album.id,
-        name: name,
-        artist: artist,
+        widget.album.name,
+        widget.album.artist,
+        newName: name,
+        newArtist: artist,
       );
     }
 
     final result = await service.previewAlbum(
       name,
       artist,
-      widget.album.id,
       expectedTrackCount: widget.album.trackCount,
     );
 
@@ -267,7 +281,6 @@ class _AlbumFetchSheetState extends State<_AlbumFetchSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Drag handle
             Center(
               child: Container(
                 width: 36,
@@ -280,7 +293,6 @@ class _AlbumFetchSheetState extends State<_AlbumFetchSheet> {
             ),
             const SizedBox(height: AppSpacing.md),
 
-            // Header + Search button
             Row(
               children: [
                 Expanded(
@@ -310,7 +322,6 @@ class _AlbumFetchSheetState extends State<_AlbumFetchSheet> {
             ),
             const SizedBox(height: AppSpacing.md),
 
-            // Editable fields
             TextField(
               controller: _nameCtrl,
               textInputAction: TextInputAction.next,
@@ -330,13 +341,11 @@ class _AlbumFetchSheetState extends State<_AlbumFetchSheet> {
               ),
             ),
 
-            // Preview card
             if (_state == _FetchSheetState.preview && _preview != null) ...[
               const SizedBox(height: AppSpacing.md),
               _PreviewCard(preview: _preview!),
             ],
 
-            // Not found
             if (_state == _FetchSheetState.error) ...[
               const SizedBox(height: AppSpacing.sm),
               Text(
@@ -348,7 +357,6 @@ class _AlbumFetchSheetState extends State<_AlbumFetchSheet> {
 
             const SizedBox(height: AppSpacing.md),
 
-            // Apply button — only shown after a successful preview
             if (_state == _FetchSheetState.preview)
               SizedBox(
                 width: double.infinity,
@@ -410,7 +418,6 @@ class _PreviewCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Artwork preview
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: preview.artworkPath != null
@@ -511,4 +518,3 @@ class _AlbumTile extends StatelessWidget {
     );
   }
 }
-

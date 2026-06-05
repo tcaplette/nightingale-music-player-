@@ -1,5 +1,17 @@
+import 'package:nightingale/core/activitypub/models/ap_actor.dart';
 import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/core/repositories/base_repository.dart';
+
+sealed class FollowResult {}
+
+class FollowSuccess extends FollowResult {}
+
+class AlreadyFollowing extends FollowResult {}
+
+class NotANightingalePeer extends FollowResult {
+  NotANightingalePeer(this.actor);
+  final ApActor actor;
+}
 
 enum FollowRequestDirection { incoming, outgoing }
 
@@ -15,7 +27,7 @@ enum FollowRequestState {
 abstract interface class SocialRepository implements Repository {
   // ── Outgoing follows ──────────────────────────────────────────────────────
 
-  Future<void> followActor(String actorUrl);
+  Future<FollowResult> followActor(String actorUrl);
   Future<void> unfollowActor(String actorUrl);
 
   Future<String?> getFollowState(String actorUrl);

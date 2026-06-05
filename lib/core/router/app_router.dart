@@ -37,8 +37,8 @@ import 'package:nightingale/shared/theme/app_motion.dart';
 
 abstract final class AppRoutes {
   static const String library = '/library';
-  static const String albumDetail = '/library/albums/:albumId';
-  static const String artistDetail = '/library/artists/:artistId';
+  static const String albumDetail = '/library/albums/:albumArtist/:albumName';
+  static const String artistDetail = '/library/artists/:artist';
   static const String search = '/search';
   static const String nowPlaying = '/now-playing';
   static const String queue = '/queue';
@@ -168,27 +168,30 @@ GoRouter buildRouter(ProviderContainer container) {
               pageBuilder: (ctx, state) => _fadePage(ctx, state, const LibraryScreen()),
               routes: [
                 GoRoute(
-                  path: 'albums/:albumId',
+                  path: 'albums/:albumArtist/:albumName',
                   name: 'albumDetail',
                   pageBuilder: (ctx, state) {
-                    final albumId = int.parse(state.pathParameters['albumId']!);
-                    return _fadePage(ctx, state, AlbumDetailScreen(albumId: albumId));
+                    final albumArtist = Uri.decodeComponent(
+                      state.pathParameters['albumArtist'] ?? '',
+                    );
+                    final albumName = Uri.decodeComponent(
+                      state.pathParameters['albumName'] ?? '',
+                    );
+                    return _fadePage(
+                      ctx,
+                      state,
+                      AlbumDetailScreen(albumName: albumName, albumArtist: albumArtist),
+                    );
                   },
                 ),
                 GoRoute(
-                  path: 'artists/:artistId',
+                  path: 'artists/:artist',
                   name: 'artistDetail',
                   pageBuilder: (ctx, state) {
-                    final artistId =
-                        int.tryParse(state.pathParameters['artistId'] ?? '');
-                    if (artistId == null) {
-                      return _fadePage(
-                        ctx,
-                        state,
-                        const LibraryScreen(),
-                      );
-                    }
-                    return _fadePage(ctx, state, ArtistDetailScreen(artistId: artistId));
+                    final artist = Uri.decodeComponent(
+                      state.pathParameters['artist'] ?? '',
+                    );
+                    return _fadePage(ctx, state, ArtistDetailScreen(artist: artist));
                   },
                 ),
               ],

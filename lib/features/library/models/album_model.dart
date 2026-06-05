@@ -1,8 +1,5 @@
-import 'package:nightingale/core/database/app_database.dart';
-
 class AlbumModel {
   const AlbumModel({
-    required this.id,
     required this.name,
     required this.artist,
     this.artworkPath,
@@ -11,7 +8,6 @@ class AlbumModel {
     this.includedTrackCount = 0,
   });
 
-  final int id;
   final String name;
   final String artist;
   final String? artworkPath;
@@ -19,20 +15,10 @@ class AlbumModel {
   final int trackCount;
   final int includedTrackCount;
 
-  factory AlbumModel.fromRow(AlbumsTableData row) {
-    return AlbumModel(
-      id: row.id,
-      name: row.name,
-      artist: row.artist,
-      artworkPath: row.artworkPath,
-      releaseYear: row.releaseYear,
-      trackCount: row.trackCount,
-    );
-  }
+  @override
+  bool operator ==(Object other) =>
+      other is AlbumModel && other.name == name && other.artist == artist;
 
   @override
-  bool operator ==(Object other) => other is AlbumModel && other.id == id;
-
-  @override
-  int get hashCode => id.hashCode;
+  int get hashCode => Object.hash(name, artist);
 }

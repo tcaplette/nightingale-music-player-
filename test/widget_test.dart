@@ -10,6 +10,7 @@ import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/core/debug/network_inspector.dart';
 import 'package:nightingale/core/federation/actor_resolver.dart';
 import 'package:nightingale/core/federation/http_signature_service.dart';
+import 'package:nightingale/core/federation/nightingale_actor_validator.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
 import 'package:nightingale/core/repositories/activity_repository.dart';
 import 'package:nightingale/core/repositories/app_info_repository.dart';
@@ -77,6 +78,7 @@ Future<void> _setupTestServiceLocator() async {
   _sl.registerSingleton<NodeReachabilityService>(NodeReachabilityService());
 
   // Phase 5 social repositories
+  _sl.registerSingleton<NightingaleActorValidator>(const NightingaleActorValidator());
   _sl.registerSingleton<SocialRepository>(
     SocialRepositoryImpl(
       db: _testDb!,
@@ -84,6 +86,7 @@ Future<void> _setupTestServiceLocator() async {
       actorResolver: actorResolver,
       identityRepo: _sl<NodeIdentityRepository>(),
       moderation: moderation,
+      validator: _sl<NightingaleActorValidator>(),
     ),
   );
   _sl.registerSingleton<ActivityRepository>(

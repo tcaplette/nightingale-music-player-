@@ -7,9 +7,6 @@ class TrackModel {
     required this.filePath,
     required this.title,
     required this.artist,
-    this.albumId,
-    this.artistId,
-    this.albumArtistId,
     this.albumName,
     this.albumArtist,
     this.trackNumber,
@@ -18,7 +15,6 @@ class TrackModel {
     this.releaseYear,
     required this.durationMs,
     this.artworkPath,
-    this.albumArtworkPath,
     required this.dateAdded,
     // Phase 4: federation fields
     this.sourceActorUrl,
@@ -33,9 +29,6 @@ class TrackModel {
   final String filePath;
   final String title;
   final String artist;
-  final int? albumId;
-  final int? artistId;
-  final int? albumArtistId;
   final String? albumName;
   final String? albumArtist;
   final int? trackNumber;
@@ -44,7 +37,6 @@ class TrackModel {
   final int? releaseYear;
   final int durationMs;
   final String? artworkPath;
-  final String? albumArtworkPath;
   final DateTime dateAdded;
 
   // Phase 4: federation fields
@@ -60,16 +52,16 @@ class TrackModel {
 
   bool get isRemote => sourceActorUrl != null;
 
-  factory TrackModel.fromRow(TracksTableData row, {String? albumName, String? albumArtworkPath}) {
+  // After the flat-schema migration, track artwork IS the album artwork.
+  String? get albumArtworkPath => artworkPath;
+
+  factory TrackModel.fromRow(TracksTableData row) {
     return TrackModel(
       id: row.id,
       filePath: row.filePath,
       title: row.title,
       artist: row.artist,
-      albumId: row.albumId,
-      artistId: row.artistId,
-      albumArtistId: row.albumArtistId,
-      albumName: albumName,
+      albumName: row.albumName,
       albumArtist: row.albumArtist,
       trackNumber: row.trackNumber,
       discNumber: row.discNumber,
@@ -77,7 +69,6 @@ class TrackModel {
       releaseYear: row.releaseYear,
       durationMs: row.durationMs,
       artworkPath: row.artworkPath,
-      albumArtworkPath: albumArtworkPath,
       dateAdded: row.dateAdded,
       isrc: row.isrc,
       isIncluded: row.isIncluded,
@@ -90,9 +81,7 @@ class TrackModel {
       filePath: Value(filePath),
       title: Value(title),
       artist: Value(artist),
-      albumId: Value(albumId),
-      artistId: Value(artistId),
-      albumArtistId: Value(albumArtistId),
+      albumName: Value(albumName),
       albumArtist: Value(albumArtist),
       trackNumber: Value(trackNumber),
       discNumber: Value(discNumber),

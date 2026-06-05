@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nightingale/core/di/service_locator.dart';
+import 'package:nightingale/features/federation/network/source_availability_provider.dart';
+import 'package:nightingale/features/federation/network/source_availability_status.dart';
 import 'package:nightingale/features/federation/publishing/library_publisher.dart';
 import 'package:nightingale/features/library/models/track_model.dart';
 import 'package:nightingale/features/library/widgets/metadata_editor_sheet.dart';
@@ -8,14 +11,16 @@ import 'package:nightingale/shared/components/sheets/app_bottom_sheet.dart';
 import 'package:nightingale/shared/theme/app_spacing.dart';
 
 /// Sharing settings screen for library federation privacy.
-class SharingSettingsScreen extends StatefulWidget {
+class SharingSettingsScreen extends ConsumerStatefulWidget {
   const SharingSettingsScreen({super.key});
 
   @override
-  State<SharingSettingsScreen> createState() => _SharingSettingsScreenState();
+  ConsumerState<SharingSettingsScreen> createState() =>
+      _SharingSettingsScreenState();
 }
 
-class _SharingSettingsScreenState extends State<SharingSettingsScreen> {
+class _SharingSettingsScreenState
+    extends ConsumerState<SharingSettingsScreen> {
   final _publisher = sl<LibraryPublisher>();
   SharingScope _scope = SharingScope.private;
   List<TrackModel> _incompleteTracks = [];
@@ -56,6 +61,7 @@ class _SharingSettingsScreenState extends State<SharingSettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(AppSpacing.md),
         children: [
+          _sourceAvailabilityBanner(),
           _section('Library Visibility', [
             _radioTile(
               title: 'Private',
@@ -84,6 +90,61 @@ class _SharingSettingsScreenState extends State<SharingSettingsScreen> {
             _incompleteSection(),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _sourceAvailabilityBanner() {
+    final status = ref
+        .watch(sourceAvailabilityProvider)
+        .valueOrNull;
+
+    if (status == SourceAvailabilityStatus.consumerOnly) {
+      return _statusBanner(
+        icon: Icons.signal_wifi_off,
+        message:
+            'Your library is not reachable. Connect to mobile data to share your music.',
+        color: Colors.orange,
+      );
+    }
+    if (status == SourceAvailabilityStatus.availableViaCellular) {
+      return _statusBanner(
+        icon: Icons.signal_cellular_alt,
+        message:
+            'Sharing via mobile data — WiFi does not allow incoming connections.',
+        color: Colors.blue,
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
+  Widget _statusBanner({
+    required IconData icon,
+    required String message,
+    required Color color,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(fontSize: 13, color: color),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -2,9 +2,11 @@ import 'package:drift/drift.dart';
 import 'package:nightingale/core/activitypub/models/ap_activity.dart';
 import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/core/federation/actor_resolver.dart';
+import 'package:nightingale/core/federation/nightingale_actor_validator.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
 import 'package:nightingale/features/federation/delivery/activity_delivery_service.dart';
 import 'package:nightingale/features/federation/discovery/peer_exchange_service.dart';
+import 'package:nightingale/features/federation/library/remote_library_fetcher.dart';
 import 'package:nightingale/features/node_identity/node_identity_repository.dart';
 
 const _tag = 'social_subscribing';
@@ -17,17 +19,23 @@ class SocialSubscribingService {
     required ActivityDeliveryService delivery,
     required NodeIdentityRepository identityRepo,
     required PeerExchangeService peerExchange,
+    required RemoteLibraryFetcher libraryFetcher,
+    required NightingaleActorValidator validator,
   })  : _db = db,
         _actorResolver = actorResolver,
         _delivery = delivery,
         _identityRepo = identityRepo,
-        _peerExchange = peerExchange;
+        _peerExchange = peerExchange,
+        _libraryFetcher = libraryFetcher,
+        _validator = validator;
 
   final AppDatabase _db;
   final ActorResolver _actorResolver;
   final ActivityDeliveryService _delivery;
   final NodeIdentityRepository _identityRepo;
   final PeerExchangeService _peerExchange;
+  final RemoteLibraryFetcher _libraryFetcher;
+  final NightingaleActorValidator _validator;
 
   // ── Following ─────────────────────────────────────────────────────────────
 
@@ -46,9 +54,27 @@ class SocialSubscribingService {
     // Resolve actor to verify existence and get inbox
     final result = await _actorResolver.resolve(actorUrl);
     if (result is! ResolveOk) {
-      throw Exception('Could not resolve actor: $actorUrl');
+      AppLogger.warning(
+        'SocialSubscribingService: could not resolve $actorUrl ($result) — aborting follow',
+        tag: _tag,
+      );
+      return;
     }
     final actor = result.actor;
+    AppLogger.debug(
+      'SocialSubscribingService: resolved actor id=${actor.id} '
+      'nightingalePublicAddress=${actor.nightingalePublicAddress}',
+      tag: _tag,
+    );
+
+    if (!_validator.isNightingalePeer(actor)) {
+      AppLogger.warning(
+        'SocialSubscribingService: $actorUrl is not a Nightingale peer — skipping follow '
+        '(id=${actor.id} nightingalePublicAddress=${actor.nightingalePublicAddress})',
+        tag: _tag,
+      );
+      return;
+    }
 
     // Insert into following table
     await _db.into(_db.followingTable).insert(
@@ -79,6 +105,15 @@ class SocialSubscribingService {
     // and cached in the background. This is fire-and-forget — the follow
     // completes immediately and the UI is not blocked.
     _peerExchange.enqueue(actorUrl);
+
+    // Immediately seed the local recommendation cache with the new peer's
+    // library so the radio has tracks to play straight away.
+    _libraryFetcher.fetchLibrary(actorUrl).then((tracks) {
+      AppLogger.info(
+        'Pre-seeded ${tracks?.length ?? 0} tracks from new follow $actorUrl',
+        tag: _tag,
+      );
+    }).ignore();
   }
 
   /// Unfollows an actor.

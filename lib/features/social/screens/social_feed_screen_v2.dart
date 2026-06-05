@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nightingale/core/router/app_router.dart';
 import 'package:nightingale/features/social/providers/social_feed_notifier.dart';
+import 'package:nightingale/features/social/providers/social_graph_notifier.dart';
 import 'package:nightingale/shared/components/empty_state_widget.dart';
 import 'package:nightingale/shared/components/notifications_badge_button.dart';
 import 'package:nightingale/shared/components/skeleton_loader.dart';
@@ -20,7 +21,14 @@ class SocialFeedScreenV2 extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Feed'),
-        actions: const [NotificationsBadgeButton()],
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.people_outline),
+            tooltip: 'Following',
+            onPressed: () => context.push(AppRoutes.following),
+          ),
+          const NotificationsBadgeButton(),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: () => ref.read(socialFeedProvider.notifier).refresh(),
@@ -42,6 +50,7 @@ class _FeedBody extends ConsumerWidget {
 
     return Column(
       children: [
+        const _FollowSummaryRow(),
         if (state.isOffline) const _OfflineBanner(),
         if (state.items.isEmpty)
           Expanded(
@@ -84,6 +93,50 @@ class _FeedBody extends ConsumerWidget {
             ),
           ),
         ),
+      ],
+    );
+  }
+}
+
+class _FollowSummaryRow extends ConsumerWidget {
+  const _FollowSummaryRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final graph = ref.watch(socialGraphProvider);
+    final followingCount = graph.following.length + graph.outgoingPending.length;
+    final followersCount = graph.followers.length + graph.incomingPending.length;
+
+    final style = Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: AppColors.neutral400,
+        );
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
+          child: Row(
+            children: [
+              GestureDetector(
+                onTap: () => context.push(AppRoutes.following),
+                child: Text('$followingCount following', style: style),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                child: Text('·', style: style),
+              ),
+              GestureDetector(
+                onTap: () => context.push(AppRoutes.followers),
+                child: Text('$followersCount followers', style: style),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
       ],
     );
   }

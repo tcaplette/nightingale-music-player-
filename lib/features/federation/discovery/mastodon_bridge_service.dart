@@ -338,10 +338,52 @@ class MastodonBridgeService {
   /// Extracts the `x-nightingale-actor-url` extension field from a raw actor
   /// JSON object. Returns null if absent or malformed.
   static String? _extractNightingaleUrl(Map<String, dynamic> actorJson) {
+    // Mastodon REST API format (authenticated import):
+    // { "fields": [{"name": "x-nightingale-actor-url", "value": "http://..."}] }
+    final fields = actorJson['fields'];
+    if (fields is List) {
+      for (final field in fields) {
+        if (field is Map<String, dynamic>) {
+          final name = (field['name'] as String? ?? '').toLowerCase().trim();
+          if (name == 'x-nightingale-actor-url') {
+            final value = field['value'] as String?;
+            if (value != null && value.isNotEmpty) {
+              return _validateUrl(value);
+            }
+          }
+        }
+      }
+    }
+
+    // ActivityPub actor format (unauthenticated / WebFinger path):
+    // { "attachment": [{"type": "PropertyValue", "name": "...", "value": "..."}] }
+    final attachment = actorJson['attachment'];
+    if (attachment is List) {
+      for (final item in attachment) {
+        if (item is Map<String, dynamic>) {
+          final name = (item['name'] as String? ?? '').toLowerCase().trim();
+          if (name == 'x-nightingale-actor-url') {
+            final value = item['value'] as String?;
+            if (value != null && value.isNotEmpty) {
+              return _validateUrl(value);
+            }
+          }
+        }
+      }
+    }
+
+    // Legacy: top-level key kept for backwards compatibility.
     final raw = actorJson['x-nightingale-actor-url'];
-    if (raw is! String || raw.isEmpty) return null;
+    if (raw is String && raw.isNotEmpty) return _validateUrl(raw);
+
+    return null;
+  }
+
+  static String? _validateUrl(String raw) {
     final uri = Uri.tryParse(raw);
-    if (uri == null || !uri.hasScheme || uri.scheme != 'https') return null;
+    if (uri == null || !uri.hasScheme) return null;
+    // Accept both http and https — Nightingale nodes use plain HTTP.
+    if (uri.scheme != 'http' && uri.scheme != 'https') return null;
     return raw;
   }
 }

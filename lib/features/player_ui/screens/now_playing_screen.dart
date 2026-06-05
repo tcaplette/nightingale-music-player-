@@ -7,7 +7,7 @@ import 'package:nightingale/core/audio/audio_source.dart';
 import 'package:nightingale/core/audio/playback_state_model.dart' as ps;
 import 'package:nightingale/core/router/app_router.dart';
 import 'package:nightingale/features/playback/providers/playback_providers.dart';
-import 'package:nightingale/features/social/providers/now_playing_broadcast_provider.dart';
+import 'package:nightingale/features/social/providers/federated_radio_provider.dart';
 import 'package:nightingale/shared/components/network_state/buffering_widget.dart';
 import 'package:nightingale/shared/components/network_state/host_offline_widget.dart';
 import 'package:nightingale/shared/theme/app_colors.dart';
@@ -43,7 +43,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
           onPressed: () => context.pop(),
         ),
         actions: [
-          _NowPlayingBroadcastToggle(),
+          const _FederatedRadioToggle(),
           IconButton(
             icon: const Icon(Icons.queue_music),
             tooltip: 'Queue',
@@ -434,20 +434,28 @@ class _TransportControls extends ConsumerWidget {
   }
 }
 
-/// Now Playing broadcast toggle — shown in the app bar of the Now Playing screen.
-/// Defaults to off each session; tapping toggles the session-scoped flag.
-class _NowPlayingBroadcastToggle extends ConsumerWidget {
+class _FederatedRadioToggle extends ConsumerWidget {
+  const _FederatedRadioToggle();
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isOn = ref.watch(nowPlayingBroadcastProvider);
+    final radioAsync = ref.watch(federatedRadioProvider);
+    final isOn = radioAsync.valueOrNull?.enabled ?? false;
+    final scheme = Theme.of(context).colorScheme;
+
     return IconButton(
       icon: Icon(
-        isOn ? Icons.broadcast_on_personal : Icons.broadcast_on_personal_outlined,
-        color: isOn ? AppColors.accent : null,
+        Icons.cell_tower,
+        color: isOn ? scheme.primary : scheme.onSurface.withValues(alpha: 0.4),
       ),
-      tooltip: isOn ? 'Broadcasting Now Playing — tap to stop' : 'Share Now Playing',
-      onPressed: () =>
-          ref.read(nowPlayingBroadcastProvider.notifier).toggle(),
+      tooltip: isOn ? 'Federated Radio on — tap to stop' : 'Start Federated Radio',
+      onPressed: () async {
+        await ref.read(federatedRadioProvider.notifier).toggle();
+        final enabled = ref.read(federatedRadioProvider).valueOrNull?.enabled ?? false;
+        if (enabled) {
+          ref.read(playbackProvider.notifier).initiateRadio().ignore();
+        }
+      },
     );
   }
 }

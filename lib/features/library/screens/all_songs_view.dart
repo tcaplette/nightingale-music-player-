@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:nightingale/core/router/app_router.dart';
+import 'package:nightingale/features/library/models/track_model.dart';
 import 'package:nightingale/features/library/providers/library_providers.dart';
 import 'package:nightingale/features/library/screens/library_empty_state.dart';
 import 'package:nightingale/features/library/widgets/metadata_editor_sheet.dart';
 import 'package:nightingale/features/library/widgets/songs_selection_sheet.dart';
 import 'package:nightingale/features/library/widgets/track_tile.dart';
 import 'package:nightingale/features/playback/providers/playback_providers.dart';
+import 'package:nightingale/features/social/providers/federated_radio_provider.dart';
 import 'package:nightingale/shared/components/empty_state_widget.dart';
 import 'package:nightingale/shared/components/skeleton_loader.dart';
 
@@ -67,13 +71,48 @@ class AllSongsView extends ConsumerWidget {
                             startIndex: i,
                           );
                         },
-                        onLongPress: () => showMetadataEditorSheet(context, track),
+                        onLongPress: () => _showTrackMenu(context, ref, track),
                       );
                     },
                   ),
                 ),
         );
       },
+    );
+  }
+
+  void _showTrackMenu(BuildContext context, WidgetRef ref, TrackModel track) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Edit Metadata'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                showMetadataEditorSheet(context, track);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.cell_tower),
+              title: const Text('Start Radio'),
+              onTap: () async {
+                Navigator.of(ctx).pop();
+                await ref.read(federatedRadioProvider.notifier).startSeeded(track.artist);
+                ref.read(playbackProvider.notifier).initiateRadio().ignore();
+                if (context.mounted) context.push(AppRoutes.nowPlaying);
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 

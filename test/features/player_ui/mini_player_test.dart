@@ -75,6 +75,8 @@ class _StubPlaybackNotifier extends AsyncNotifier<PlaybackStateModel>
   void toggleShuffle() {}
   @override
   void cycleRepeat() {}
+  @override
+  Future<void> initiateRadio() async {}
 }
 
 Widget _wrap(Widget child, {PlaybackStateModel? playbackState}) {

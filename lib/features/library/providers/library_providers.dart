@@ -113,29 +113,33 @@ final discoveredTrackCountProvider = StreamProvider<int>((ref) {
   );
 });
 
+// Album name + artist pair used as family key
+typedef AlbumKey = ({String albumName, String albumArtist});
+
 final albumDetailProvider =
-    FutureProvider.family<AlbumModel?, int>((ref, albumId) {
-      return sl<LibraryRepository>().getAlbumById(albumId);
+    FutureProvider.family<AlbumModel?, AlbumKey>((ref, key) {
+      return sl<LibraryRepository>().getAlbumByNameAndArtist(
+        key.albumName,
+        key.albumArtist,
+      );
     });
 
 final albumTracksProvider =
-    StreamProvider.family<List<TrackModel>, int>((ref, albumId) {
-      return sl<LibraryRepository>().watchTracksByAlbum(albumId);
+    StreamProvider.family<List<TrackModel>, AlbumKey>((ref, key) {
+      return sl<LibraryRepository>().watchTracksByAlbum(
+        key.albumName,
+        key.albumArtist,
+      );
     });
 
 final artistAlbumsProvider =
-    FutureProvider.family<List<AlbumModel>, int>((ref, artistId) {
-      return sl<LibraryRepository>().getAlbumsByArtist(artistId);
+    FutureProvider.family<List<AlbumModel>, String>((ref, artist) {
+      return sl<LibraryRepository>().getAlbumsByArtist(artist);
     });
 
 final artistTracksProvider =
-    FutureProvider.family<List<TrackModel>, int>((ref, artistId) {
-      return sl<LibraryRepository>().getTracksByArtist(artistId);
-    });
-
-final artistByIdProvider =
-    FutureProvider.family<ArtistModel?, int>((ref, artistId) {
-      return sl<LibraryRepository>().getArtistById(artistId);
+    FutureProvider.family<List<TrackModel>, String>((ref, artist) {
+      return sl<LibraryRepository>().getTracksByArtist(artist);
     });
 
 final genreTracksProvider =

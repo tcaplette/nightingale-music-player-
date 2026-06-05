@@ -1,10 +1,10 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/features/social/providers/profile_notifier.dart';
 import 'package:nightingale/features/social/providers/social_graph_notifier.dart';
-import 'package:nightingale/shared/components/identity/person_display.dart';
 import 'package:nightingale/shared/components/social/activity_card.dart';
 import 'package:nightingale/shared/components/social/playlist_card.dart';
 import 'package:nightingale/shared/theme/app_colors.dart';
@@ -40,90 +40,109 @@ class _ProfileBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final actor = state.actor;
+    final nowPlaying = _nowPlayingActivity(state);
 
     return ListView(
-      padding: const EdgeInsets.all(AppSpacing.md),
+      padding: EdgeInsets.zero,
       children: [
-        // ── Header ────────────────────────────────────────────────────────────
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            PersonDisplay(
-              displayName: actor?.name ?? _fallbackName(actorUrl),
-              avatarUrl: actor?.icon,
-              avatarSize: 64,
+        // ── Identity header ───────────────────────────────────────────────────
+        _ProfileHeader(actorUrl: actorUrl, state: state),
+
+        // ── Bio ───────────────────────────────────────────────────────────────
+        if (actor?.summary != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md, AppSpacing.md, AppSpacing.md, 0,
             ),
-            const Spacer(),
-            _FollowButton(actorUrl: actorUrl, state: state),
-          ],
-        ),
-
-        if (state.isStale && state.lastUpdated != null) ...[
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            'Last updated ${_relativeTime(state.lastUpdated!)}',
-            style: Theme.of(context)
-                .textTheme
-                .labelSmall
-                ?.copyWith(color: AppColors.neutral400),
+            child: Text(
+              actor!.summary!,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
           ),
-        ],
 
-        if (actor?.summary != null) ...[
-          const SizedBox(height: AppSpacing.md),
-          Text(
-            actor!.summary!,
-            style: Theme.of(context).textTheme.bodyMedium,
+        // ── Meta: joined + stale ──────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md, AppSpacing.sm, AppSpacing.md, 0,
           ),
-        ],
-
-        // ── Advanced info affordance ──────────────────────────────────────────
-        const SizedBox(height: AppSpacing.sm),
-        GestureDetector(
-          onTap: () => _showAdvancedInfo(context, actor, actorUrl),
-          child: Text(
-            'Advanced info',
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: AppColors.neutral400,
-                  decoration: TextDecoration.underline,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (actor?.publishedAt != null)
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.calendar_today_outlined,
+                      size: 12,
+                      color: AppColors.neutral400,
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Text(
+                      'Joined ${_formatDate(actor!.publishedAt!)}',
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(color: AppColors.neutral400),
+                    ),
+                  ],
                 ),
+              if (state.isStale && state.lastUpdated != null) ...[
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  'Profile may be out of date · last synced ${_relativeTime(state.lastUpdated!)}',
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: AppColors.neutral400),
+                ),
+              ],
+            ],
           ),
         ),
+
+        const SizedBox(height: AppSpacing.lg),
+        const Divider(height: 1),
 
         // ── Now Playing ───────────────────────────────────────────────────────
-        if (_nowPlayingActivity(state) != null) ...[
-          const SizedBox(height: AppSpacing.lg),
-          _NowPlayingSection(activity: _nowPlayingActivity(state)!),
-        ],
-
-        // ── Playlists ─────────────────────────────────────────────────────────
-        if (state.playlists.isNotEmpty) ...[
-          const SizedBox(height: AppSpacing.lg),
-          Text(
-            'Playlists',
-            style: Theme.of(context).textTheme.titleSmall,
+        if (nowPlaying != null) ...[
+          _SectionLabel(label: 'Now Playing', color: AppColors.accent),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            child: ActivityCard(activity: nowPlaying),
           ),
           const SizedBox(height: AppSpacing.sm),
-          for (final playlist in state.playlists)
-            PlaylistCard(
-              playlist: playlist,
-              onTap: () => context.push(
-                '/playlists/${Uri.encodeComponent(playlist.collectionUrl ?? '')}',
-              ),
-            ),
+          const Divider(height: 1),
         ],
 
         // ── Recent Activity ───────────────────────────────────────────────────
         if (state.recentActivities.isNotEmpty) ...[
-          const SizedBox(height: AppSpacing.lg),
-          Text(
-            'Recent Activity',
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          const SizedBox(height: AppSpacing.sm),
+          _SectionLabel(label: 'Recent Activity'),
           for (final activity in state.recentActivities)
-            ActivityCard(activity: activity),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+              child: ActivityCard(activity: activity),
+            ),
+          const SizedBox(height: AppSpacing.sm),
         ],
+
+        // ── Playlists ─────────────────────────────────────────────────────────
+        if (state.playlists.isNotEmpty) ...[
+          const Divider(height: 1),
+          _SectionLabel(label: 'Playlists'),
+          for (final playlist in state.playlists)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+              child: PlaylistCard(
+                playlist: playlist,
+                onTap: () => context.push(
+                  '/playlists/${Uri.encodeComponent(playlist.collectionUrl ?? '')}',
+                ),
+              ),
+            ),
+          const SizedBox(height: AppSpacing.sm),
+        ],
+
+        const SizedBox(height: AppSpacing.xl),
       ],
     );
   }
@@ -132,21 +151,19 @@ class _ProfileBody extends ConsumerWidget {
     final tenMinutesAgo = DateTime.now().subtract(const Duration(minutes: 10));
     try {
       return state.recentActivities.firstWhere(
-        (a) =>
-            a.type == 'Listen' &&
-            a.publishedAt.isAfter(tenMinutesAgo),
+        (a) => a.type == 'Listen' && a.publishedAt.isAfter(tenMinutesAgo),
       );
     } catch (_) {
       return null;
     }
   }
 
-  String _fallbackName(String url) {
-    try {
-      return Uri.parse(url).pathSegments.last;
-    } catch (_) {
-      return url;
-    }
+  String _formatDate(DateTime dt) {
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
+    ];
+    return '${months[dt.month - 1]} ${dt.year}';
   }
 
   String _relativeTime(DateTime dt) {
@@ -156,15 +173,149 @@ class _ProfileBody extends ConsumerWidget {
     if (diff.inDays < 1) return '${diff.inHours}h ago';
     return '${diff.inDays}d ago';
   }
+}
 
-  void _showAdvancedInfo(
-    BuildContext context,
-    dynamic actor,
-    String actorUrl,
-  ) {
-    showModalBottomSheet(
-      context: context,
-      builder: (_) => _AdvancedInfoSheet(actor: actor, actorUrl: actorUrl),
+class _ProfileHeader extends ConsumerWidget {
+  const _ProfileHeader({required this.actorUrl, required this.state});
+  final String actorUrl;
+  final ProfileState state;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final actor = state.actor;
+    final displayName = (actor?.name.isNotEmpty == true)
+        ? actor!.name
+        : (actor?.preferredUsername ?? _fallbackName(actorUrl));
+    final handle = actor?.preferredUsername != null
+        ? '@${actor!.preferredUsername}@${Uri.parse(actorUrl).host}'
+        : null;
+    final isPrivate = actor?.manuallyApprovesFollowers == true;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md, AppSpacing.lg, AppSpacing.md, AppSpacing.md,
+      ),
+      child: Column(
+        children: [
+          // Avatar
+          _ProfileAvatar(avatarUrl: actor?.icon, displayName: displayName),
+
+          const SizedBox(height: AppSpacing.md),
+
+          // Display name
+          Text(
+            displayName,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+            textAlign: TextAlign.center,
+          ),
+
+          // Handle + lock icon
+          if (handle != null) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  handle,
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelMedium
+                      ?.copyWith(color: AppColors.neutral400),
+                ),
+                if (isPrivate) ...[
+                  const SizedBox(width: AppSpacing.xs),
+                  const Icon(
+                    Icons.lock_outline,
+                    size: 12,
+                    color: AppColors.neutral400,
+                  ),
+                ],
+              ],
+            ),
+          ],
+
+          const SizedBox(height: AppSpacing.md),
+
+          // Follow / Unblock button
+          _FollowButton(actorUrl: actorUrl, state: state),
+        ],
+      ),
+    );
+  }
+
+  String _fallbackName(String url) {
+    try {
+      return Uri.parse(url).pathSegments.last;
+    } catch (_) {
+      return url;
+    }
+  }
+}
+
+class _ProfileAvatar extends StatelessWidget {
+  const _ProfileAvatar({required this.avatarUrl, required this.displayName});
+  final String? avatarUrl;
+  final String displayName;
+
+  String get _initials {
+    final parts = displayName.trim().split(RegExp(r'\s+'));
+    if (parts.length >= 2) {
+      return '${parts.first[0]}${parts[1][0]}'.toUpperCase();
+    }
+    return displayName.isNotEmpty ? displayName[0].toUpperCase() : '?';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const size = 88.0;
+
+    final monogram = CircleAvatar(
+      radius: size / 2,
+      backgroundColor: AppColors.accent.withValues(alpha: 0.15),
+      child: Text(
+        _initials,
+        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              color: AppColors.accent,
+              fontWeight: FontWeight.w600,
+            ),
+      ),
+    );
+
+    final url = avatarUrl;
+    if (url == null) return monogram;
+
+    return CachedNetworkImage(
+      imageUrl: url,
+      imageBuilder: (_, image) => CircleAvatar(
+        radius: size / 2,
+        backgroundImage: image,
+      ),
+      placeholder: (_, _) => monogram,
+      errorWidget: (_, _, _) => monogram,
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({required this.label, this.color});
+  final String label;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md, AppSpacing.lg, AppSpacing.md, AppSpacing.sm,
+      ),
+      child: Text(
+        label.toUpperCase(),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: color ?? AppColors.neutral400,
+              letterSpacing: 0.8,
+            ),
+      ),
     );
   }
 }
@@ -178,9 +329,8 @@ class _FollowButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     if (state.isBlocked) {
       return OutlinedButton(
-        onPressed: () => ref
-            .read(socialGraphProvider.notifier)
-            .unblockActor(actorUrl),
+        onPressed: () =>
+            ref.read(socialGraphProvider.notifier).unblockActor(actorUrl),
         child: const Text('Unblock'),
       );
     }
@@ -196,13 +346,9 @@ class _FollowButton extends ConsumerWidget {
 
     if (followState == 'pending' || followState == 'pending_delivery') {
       return Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        mainAxisSize: MainAxisSize.min,
         children: [
-          const OutlinedButton(
-            onPressed: null,
-            child: Text('Requested'),
-          ),
+          const OutlinedButton(onPressed: null, child: Text('Requested')),
+          const SizedBox(height: AppSpacing.xs),
           Text(
             'Awaiting approval',
             style: Theme.of(context)
@@ -239,33 +385,8 @@ class _FollowButton extends ConsumerWidget {
       ),
     );
     if (confirmed == true) {
-      await ref
-          .read(socialGraphProvider.notifier)
-          .unfollowActor(actorUrl);
+      await ref.read(socialGraphProvider.notifier).unfollowActor(actorUrl);
     }
-  }
-}
-
-class _NowPlayingSection extends StatelessWidget {
-  const _NowPlayingSection({required this.activity});
-  final SocialActivitiesTableData activity;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Now Playing',
-          style: Theme.of(context)
-              .textTheme
-              .labelSmall
-              ?.copyWith(color: AppColors.accent, letterSpacing: 0.8),
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        ActivityCard(activity: activity),
-      ],
-    );
   }
 }
 
@@ -283,9 +404,7 @@ class _OverflowMenu extends ConsumerWidget {
             context: context,
             builder: (_) => AlertDialog(
               title: const Text('Block'),
-              content: const Text(
-                'Block this person? They will be notified.',
-              ),
+              content: const Text('Block this person? They will be notified.'),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context, false),
@@ -299,21 +418,15 @@ class _OverflowMenu extends ConsumerWidget {
             ),
           );
           if (confirmed == true) {
-            await ref
-                .read(socialGraphProvider.notifier)
-                .blockActor(actorUrl);
+            await ref.read(socialGraphProvider.notifier).blockActor(actorUrl);
             if (context.mounted) context.pop();
           }
         }
         if (value == 'mute') {
-          await ref
-              .read(socialGraphProvider.notifier)
-              .muteActor(actorUrl);
+          await ref.read(socialGraphProvider.notifier).muteActor(actorUrl);
         }
         if (value == 'unmute') {
-          await ref
-              .read(socialGraphProvider.notifier)
-              .unmuteActor(actorUrl);
+          await ref.read(socialGraphProvider.notifier).unmuteActor(actorUrl);
         }
       },
       itemBuilder: (_) => [
@@ -324,75 +437,6 @@ class _OverflowMenu extends ConsumerWidget {
         else
           const PopupMenuItem(value: 'mute', child: Text('Mute')),
       ],
-    );
-  }
-}
-
-class _AdvancedInfoSheet extends StatelessWidget {
-  const _AdvancedInfoSheet({required this.actor, required this.actorUrl});
-  final dynamic actor;
-  final String actorUrl;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Advanced Info',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: AppSpacing.md),
-          _InfoRow(label: 'Handle', value: actor?.preferredUsername != null
-              ? '@${actor.preferredUsername}@${Uri.parse(actorUrl).host}'
-              : actorUrl),
-          _InfoRow(label: 'Node URL', value: Uri.parse(actorUrl).host),
-          if (actor?.publishedAt != null)
-            _InfoRow(
-              label: 'Joined',
-              value: actor.publishedAt.toString().substring(0, 10),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.label, required this.value});
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 80,
-            child: Text(
-              label,
-              style: Theme.of(context)
-                  .textTheme
-                  .labelSmall
-                  ?.copyWith(color: AppColors.neutral400),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    fontFamily: 'monospace',
-                  ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

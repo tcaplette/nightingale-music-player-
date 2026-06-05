@@ -17,6 +17,8 @@ class ApActor {
     this.url,
     this.manuallyApprovesFollowers,
     this.publishedAt,
+    this.nightingalePublicAddress,
+    this.nightingaleRelay,
   });
 
   final String id;
@@ -34,6 +36,10 @@ class ApActor {
   // true if the account manually approves followers (private account)
   final bool? manuallyApprovesFollowers;
   final DateTime? publishedAt;
+  // Nightingale extension: STUN-discovered public IP:port of the device's HTTP server
+  final String? nightingalePublicAddress;
+  // Nightingale extension: true if this node volunteers as a circuit relay
+  final bool? nightingaleRelay;
 
   factory ApActor.fromJson(Map<String, dynamic> json) => ApActor(
         id: json['id'] as String,
@@ -57,6 +63,9 @@ class ApActor {
         publishedAt: json['published'] is String
             ? DateTime.tryParse(json['published'] as String)
             : null,
+        nightingalePublicAddress:
+            json['x-nightingale-public-address'] as String?,
+        nightingaleRelay: json['x-nightingale-relay'] as bool?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -76,5 +85,8 @@ class ApActor {
         if (manuallyApprovesFollowers != null)
           'manuallyApprovesFollowers': manuallyApprovesFollowers,
         if (publishedAt != null) 'published': publishedAt!.toIso8601String(),
+        if (nightingalePublicAddress != null)
+          'x-nightingale-public-address': nightingalePublicAddress,
+        if (nightingaleRelay == true) 'x-nightingale-relay': true,
       };
 }

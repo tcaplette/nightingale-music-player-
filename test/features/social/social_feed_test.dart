@@ -39,7 +39,7 @@ class _StubActivityRepo implements ActivityRepository {
 }
 
 class _StubSocialRepo implements SocialRepository {
-  @override Future<void> followActor(String actorUrl) async {}
+  @override Future<FollowResult> followActor(String actorUrl) async => FollowSuccess();
   @override Future<void> unfollowActor(String actorUrl) async {}
   @override Future<String?> getFollowState(String actorUrl) async => null;
   @override Future<List<FollowsTableData>> getFollowing() async => [];

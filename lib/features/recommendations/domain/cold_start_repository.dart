@@ -78,10 +78,10 @@ class ColdStartRepository {
         .where((g) => g.isNotEmpty)
         .toSet();
 
-    if (localGenres.isEmpty) return [];
-
     // Match against cached remote library metadata
     final remoteCaches = await _db.select(_db.remoteLibrariesTable).get();
+    if (remoteCaches.isEmpty) return [];
+
     final results = <RecommendationResult>[];
 
     for (final cache in remoteCaches) {
@@ -92,21 +92,31 @@ class ColdStartRepository {
         for (final item in items) {
           final map = item as Map<String, dynamic>;
           final genre = (map['genre'] as String? ?? '').toLowerCase().trim();
-          if (!localGenres.contains(genre)) continue;
+          // When the user has local music: skip tracks whose genre is known and
+          // doesn't match. When the user has no local music at all: include
+          // everything from the network (new user cold-start).
+          if (localGenres.isNotEmpty &&
+              genre.isNotEmpty &&
+              !localGenres.contains(genre)) continue;
           final artist = map['artist'] as String? ?? '';
           final title = map['name'] as String? ?? '';
           if (artist.isEmpty || title.isEmpty) continue;
           final fp =
               '${artist.toLowerCase().trim()}:${title.toLowerCase().trim()}';
+          final streamUrl = map['stream_url'] as String?;
+          final reasonString = localGenres.isNotEmpty && genre.isNotEmpty
+              ? 'Matches your $genre library'
+              : 'From someone you follow';
           results.add(RecommendationResult(
             trackFingerprint: fp,
             trackTitle: title,
             trackArtist: artist,
             score: 0.8,
             hostNodeUrl: cache.actorUrl,
+            streamUrl: streamUrl,
             provenance: ProvenanceRecord(
               paths: [ScoringPath.coldStart],
-              reasonString: 'Matches your $genre library',
+              reasonString: reasonString,
             ),
           ));
         }

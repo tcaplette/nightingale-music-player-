@@ -1,9 +1,11 @@
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:nightingale/core/activitypub/models/ap_actor.dart';
 import 'package:nightingale/core/federation/actor_resolver.dart';
 import 'package:nightingale/core/federation/http_signature_service.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
+import 'package:nightingale/features/federation/nat/connection_negotiator.dart';
 import 'package:nightingale/features/federation/reachability/node_reachability_service.dart';
 import 'package:nightingale/features/federation/streaming/audio_cache_manager.dart';
 import 'package:nightingale/features/federation/streaming/chunk_cache_manager.dart';
@@ -49,12 +51,14 @@ class StreamResolver {
     ChunkCacheManager? chunkCacheManager,
     ChunkManifestRepository? manifestRepository,
     HttpSignatureService? sigService,
+    ConnectionNegotiator? connectionNegotiator,
   })  : _actorResolver = actorResolver,
         _reachability = reachability,
         _cacheManager = cacheManager,
         _chunkCache = chunkCacheManager,
         _manifests = manifestRepository,
-        _sigService = sigService;
+        _sigService = sigService,
+        _connectionNegotiator = connectionNegotiator;
 
   final ActorResolver _actorResolver;
   final NodeReachabilityService _reachability;
@@ -62,16 +66,27 @@ class StreamResolver {
   final ChunkCacheManager? _chunkCache;
   final ChunkManifestRepository? _manifests;
   final HttpSignatureService? _sigService;
+  final ConnectionNegotiator? _connectionNegotiator;
 
   Future<StreamResolution> resolveRemoteTrack({
     required String actorUrl,
     required String trackId,
   }) async {
+    AppLogger.info(
+      'StreamResolver: resolving track=$trackId actor=$actorUrl',
+      tag: _tag,
+    );
     final trackIdInt = int.tryParse(trackId);
 
     // ── 1 & 2. Chunk path ────────────────────────────────────────────────────
     if (_manifests != null && _chunkCache != null && trackIdInt != null) {
       final manifest = await _manifests.getManifest(trackIdInt, actorUrl);
+      if (manifest == null) {
+        AppLogger.info(
+          'StreamResolver: no chunk manifest for $trackId – skipping chunk path',
+          tag: _tag,
+        );
+      }
       if (manifest != null) {
         final missingHashes = await _missingChunks(manifest);
 
@@ -141,16 +156,47 @@ class StreamResolver {
   // ── Private helpers ────────────────────────────────────────────────────────
 
   Future<String?> _tryDirectStream(String actorUrl, String trackId) async {
-    final isReachable = await _reachability.isReachable(actorUrl);
-    if (!isReachable) return null;
+    // If a ConnectionNegotiator is available, use it for three-tier resolution.
+    if (_connectionNegotiator != null) {
+      final baseUrl = await _connectionNegotiator.resolveEndpoint(actorUrl);
+      if (baseUrl == null) {
+        AppLogger.warning(
+          'StreamResolver: ConnectionNegotiator found no path for $actorUrl',
+          tag: _tag,
+        );
+        return null;
+      }
+      final url = '$baseUrl/stream/$trackId';
+      AppLogger.info('StreamResolver: negotiated stream URL → $url', tag: _tag);
+      return url;
+    }
 
+    // Fallback: legacy direct probe.
     final result = await _actorResolver.resolve(actorUrl);
-    if (result is! ResolveOk) return null;
+    if (result is! ResolveOk) {
+      AppLogger.warning(
+        'StreamResolver: actor resolve failed for $actorUrl ($result) – cannot direct stream $trackId',
+        tag: _tag,
+      );
+      return null;
+    }
     final actor = result.actor;
 
-    final baseUrl =
-        actor.id.replaceAll('/users/${actor.preferredUsername}', '');
-    return '$baseUrl/stream/$trackId';
+    final isReachable = await _reachability.isReachable(
+      actorUrl,
+      publicAddress: actor.nightingalePublicAddress,
+    );
+    if (!isReachable) {
+      AppLogger.warning(
+        'StreamResolver: $actorUrl is unreachable – cannot direct stream $trackId',
+        tag: _tag,
+      );
+      return null;
+    }
+
+    final url = '${_baseUrl(actor)}/stream/$trackId';
+    AppLogger.info('StreamResolver: direct stream URL → $url', tag: _tag);
+    return url;
   }
 
   Future<List<String>> _missingChunks(ChunkManifest manifest) async {
@@ -168,14 +214,21 @@ class StreamResolver {
     required List<String> missingHashes,
     required String actorUrl,
   }) async {
-    final isReachable = await _reachability.isReachable(actorUrl);
-    if (!isReachable) return false;
-
-    final result = await _actorResolver.resolve(actorUrl);
-    if (result is! ResolveOk) return false;
-    final actor = result.actor;
-    final baseUrl =
-        actor.id.replaceAll('/users/${actor.preferredUsername}', '');
+    String? baseUrl;
+    if (_connectionNegotiator != null) {
+      baseUrl = await _connectionNegotiator.resolveEndpoint(actorUrl);
+    } else {
+      final result = await _actorResolver.resolve(actorUrl);
+      if (result is! ResolveOk) return false;
+      final actor = result.actor;
+      final isReachable = await _reachability.isReachable(
+        actorUrl,
+        publicAddress: actor.nightingalePublicAddress,
+      );
+      if (!isReachable) return false;
+      baseUrl = _baseUrl(actor);
+    }
+    if (baseUrl == null) return false;
 
     for (final hex in missingHashes) {
       final chunkUrl = '$baseUrl/chunks/$hex';
@@ -229,6 +282,16 @@ class StreamResolver {
     }
 
     return true;
+  }
+
+  /// Returns the HTTP server base URL for [actor].
+  /// Uses the STUN-discovered public address when available; falls back to
+  /// stripping the user path from [ApActor.id].
+  static String _baseUrl(ApActor actor) {
+    if (actor.nightingalePublicAddress != null) {
+      return 'http://${actor.nightingalePublicAddress}';
+    }
+    return actor.id.replaceAll('/users/${actor.preferredUsername}', '');
   }
 
   static Uint8List _hexToBytes(String hex) {

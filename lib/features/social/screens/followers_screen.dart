@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:nightingale/core/activitypub/models/ap_actor.dart';
 import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/features/social/providers/social_graph_notifier.dart';
 import 'package:nightingale/shared/components/identity/person_display.dart';
@@ -77,30 +78,28 @@ class _FollowersBody extends ConsumerWidget {
   }
 }
 
-class _FollowerTile extends StatelessWidget {
+class _FollowerTile extends ConsumerWidget {
   const _FollowerTile({required this.follower});
   final FollowersTableData follower;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final actorAsync = ref.watch(cachedActorProvider(follower.actorUrl));
+    final actor = actorAsync.valueOrNull;
+
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.md,
         vertical: AppSpacing.xs,
       ),
-      title: PersonDisplay(displayName: _displayName(follower.actorUrl)),
+      title: PersonDisplay(
+        displayName: _resolvedName(actor, follower.actorUrl),
+        avatarUrl: actor?.icon,
+      ),
       onTap: () => context.push(
         '/profile/${Uri.encodeComponent(follower.actorUrl)}',
       ),
     );
-  }
-
-  String _displayName(String actorUrl) {
-    try {
-      return Uri.parse(actorUrl).pathSegments.last;
-    } catch (_) {
-      return actorUrl;
-    }
   }
 }
 
@@ -110,12 +109,18 @@ class _PendingIncomingTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final actorAsync = ref.watch(cachedActorProvider(request.actorUrl));
+    final actor = actorAsync.valueOrNull;
+
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.md,
         vertical: AppSpacing.xs,
       ),
-      title: PersonDisplay(displayName: _displayName(request.actorUrl)),
+      title: PersonDisplay(
+        displayName: _resolvedName(actor, request.actorUrl),
+        avatarUrl: actor?.icon,
+      ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -138,13 +143,17 @@ class _PendingIncomingTile extends ConsumerWidget {
       ),
     );
   }
+}
 
-  String _displayName(String actorUrl) {
-    try {
-      return Uri.parse(actorUrl).pathSegments.last;
-    } catch (_) {
-      return actorUrl;
-    }
+String _resolvedName(ApActor? actor, String actorUrl) {
+  if (actor != null) {
+    if (actor.name.isNotEmpty) return actor.name;
+    if (actor.preferredUsername.isNotEmpty) return actor.preferredUsername;
+  }
+  try {
+    return Uri.parse(actorUrl).pathSegments.last;
+  } catch (_) {
+    return actorUrl;
   }
 }
 

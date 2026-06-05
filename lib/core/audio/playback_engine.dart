@@ -319,8 +319,13 @@ class PlaybackEngine {
   /// remote tracks before falling back to a URI source.
   Future<ja.AudioSource> _resolveSourceAsync(TrackModel track) async {
     if (track.isRemote) {
+      print('NIGHTINGALE STREAM: resolving remote track id=${track.id} actor=${track.sourceActorUrl} streamUrl=${track.streamUrl}');
       final chunkSource = await _tryChunkSource(track);
-      if (chunkSource != null) return chunkSource;
+      if (chunkSource != null) {
+        print('NIGHTINGALE STREAM: using chunk assembler for track id=${track.id}');
+        return chunkSource;
+      }
+      print('NIGHTINGALE STREAM: no chunk source for track id=${track.id}, falling back to URI: ${track.streamUrl}');
     }
     return _resolveSource(track);
   }
@@ -335,7 +340,11 @@ class PlaybackEngine {
 
       final manifest =
           await manifests.getManifest(trackId, track.sourceActorUrl ?? '');
-      if (manifest == null) return null;
+      if (manifest == null) {
+        print('NIGHTINGALE STREAM: no chunk manifest for track id=$trackId actor=${track.sourceActorUrl}');
+        return null;
+      }
+      print('NIGHTINGALE STREAM: chunk manifest found for track id=$trackId (${manifest.chunkHashes.length} chunks)');
 
       final mediaItem = MediaItem(
         id: track.filePath,
@@ -350,7 +359,9 @@ class PlaybackEngine {
         onMissingChunk: (_) async => null,
         tag: mediaItem,
       );
-    } catch (_) {
+    } catch (e, st) {
+      print('NIGHTINGALE STREAM ERROR: _tryChunkSource failed for track id=${track.id}: $e');
+      print('NIGHTINGALE STREAM STACK: $st');
       return null;
     }
   }

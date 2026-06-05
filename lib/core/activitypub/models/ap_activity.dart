@@ -36,6 +36,8 @@ sealed class ApActivity {
       'Block' => ApBlock.fromJson(json),
       'Move' => ApMove.fromJson(json),
       'Listen' => ApListen.fromJson(json),
+      'PeerAddress' => ApPeerAddress.fromJson(json),
+      'RelayRequest' => ApRelayRequest.fromJson(json),
       _ => throw UnrecognizedActivityTypeException(type ?? 'null'),
     };
   }
@@ -343,6 +345,48 @@ class ApMove extends ApActivity {
         target: j['target'] as String?,
         to: _toList(j['to']),
         cc: _toList(j['cc']),
+        published: _parseDate(j['published']),
+      );
+
+  @override
+  Map<String, dynamic> toJson() => _baseJson();
+}
+
+class ApPeerAddress extends ApActivity {
+  const ApPeerAddress({
+    required super.id,
+    required super.actor,
+    super.object,
+    super.to,
+    super.published,
+  }) : super(type: 'PeerAddress');
+
+  factory ApPeerAddress.fromJson(Map<String, dynamic> j) => ApPeerAddress(
+        id: j['id'] as String,
+        actor: j['actor'] as String,
+        object: j['object'],
+        to: _toList(j['to']),
+        published: _parseDate(j['published']),
+      );
+
+  @override
+  Map<String, dynamic> toJson() => _baseJson();
+}
+
+class ApRelayRequest extends ApActivity {
+  const ApRelayRequest({
+    required super.id,
+    required super.actor,
+    super.object,
+    super.to,
+    super.published,
+  }) : super(type: 'RelayRequest');
+
+  factory ApRelayRequest.fromJson(Map<String, dynamic> j) => ApRelayRequest(
+        id: j['id'] as String,
+        actor: j['actor'] as String,
+        object: j['object'],
+        to: _toList(j['to']),
         published: _parseDate(j['published']),
       );
 

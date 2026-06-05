@@ -14,6 +14,8 @@ const _kSharingScopeKey = 'nightingale_settings_sharing_scope';
 const _kListenActivityEnabledKey = 'nightingale_settings_listen_activity_enabled';
 const _kSeedingEnabledKey = 'nightingale_settings_seeding_enabled';
 const _kSeedingBatteryThresholdKey = 'nightingale_settings_seeding_battery_threshold';
+const _kFederatedRadioEnabledKey = 'nightingale_settings_federated_radio_enabled';
+const _kRelayModeEnabledKey = 'nightingale_settings_relay_mode_enabled';
 
 class SettingsRepository {
   SettingsRepository({FlutterSecureStorage? storage})
@@ -169,6 +171,26 @@ class SettingsRepository {
         key: _kSeedingBatteryThresholdKey,
         value: percent.clamp(0, 100).toString(),
       );
+
+  // ── Federated Radio ────────────────────────────────────────────────────────
+
+  Future<bool> getFederatedRadioEnabled() async {
+    final v = await _storage.read(key: _kFederatedRadioEnabledKey);
+    return v == 'true';
+  }
+
+  Future<void> setFederatedRadioEnabled(bool enabled) =>
+      _storage.write(key: _kFederatedRadioEnabledKey, value: enabled.toString());
+
+  // ── Relay mode ─────────────────────────────────────────────────────────────
+
+  Future<bool> isRelayModeEnabled() async {
+    final v = await _storage.read(key: _kRelayModeEnabledKey);
+    return v == 'true'; // default off
+  }
+
+  Future<void> setRelayModeEnabled(bool enabled) =>
+      _storage.write(key: _kRelayModeEnabledKey, value: enabled.toString());
 }
 
 enum NotificationAutoClear {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:nightingale/core/activitypub/models/ap_actor.dart';
 import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/core/router/app_router.dart';
 import 'package:nightingale/features/social/providers/social_graph_notifier.dart';
@@ -83,29 +84,42 @@ class _FollowingTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final actorAsync = ref.watch(cachedActorProvider(follow.remoteActorUrl));
+    final actor = actorAsync.valueOrNull;
+
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.md,
         vertical: AppSpacing.xs,
       ),
-      title: PersonDisplay(displayName: _displayName(follow.remoteActorUrl)),
+      title: PersonDisplay(
+        displayName: _resolvedName(actor, follow.remoteActorUrl),
+        avatarUrl: actor?.icon,
+      ),
       trailing: TextButton(
-        onPressed: () => _confirmUnfollow(context, ref),
+        onPressed: () => _confirmUnfollow(context, ref, actor),
         child: Text(
           'Following',
           style: TextStyle(color: Theme.of(context).colorScheme.primary),
         ),
       ),
-      onTap: () => context.push('/profile/${Uri.encodeComponent(follow.remoteActorUrl)}'),
+      onTap: () => context.push(
+        '/profile/${Uri.encodeComponent(follow.remoteActorUrl)}',
+      ),
     );
   }
 
-  Future<void> _confirmUnfollow(BuildContext context, WidgetRef ref) async {
+  Future<void> _confirmUnfollow(
+    BuildContext context,
+    WidgetRef ref,
+    ApActor? actor,
+  ) async {
+    final name = _resolvedName(actor, follow.remoteActorUrl);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Unfollow'),
-        content: Text('Stop following ${_displayName(follow.remoteActorUrl)}?'),
+        content: Text('Stop following $name?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -124,25 +138,16 @@ class _FollowingTile extends ConsumerWidget {
           .unfollowActor(follow.remoteActorUrl);
     }
   }
-
-  // Extract a readable name from the actor URL for display until actor cache is consulted.
-  String _displayName(String actorUrl) {
-    try {
-      final uri = Uri.parse(actorUrl);
-      final segments = uri.pathSegments;
-      return segments.isNotEmpty ? segments.last : actorUrl;
-    } catch (_) {
-      return actorUrl;
-    }
-  }
 }
 
-class _PendingFollowTile extends StatelessWidget {
+class _PendingFollowTile extends ConsumerWidget {
   const _PendingFollowTile({required this.request});
   final FollowRequestsTableData request;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final actorAsync = ref.watch(cachedActorProvider(request.actorUrl));
+    final actor = actorAsync.valueOrNull;
     final label = request.state == 'pending_delivery'
         ? 'Waiting to deliver'
         : 'Awaiting approval';
@@ -152,7 +157,10 @@ class _PendingFollowTile extends StatelessWidget {
         horizontal: AppSpacing.md,
         vertical: AppSpacing.xs,
       ),
-      title: PersonDisplay(displayName: _displayName(request.actorUrl)),
+      title: PersonDisplay(
+        displayName: _resolvedName(actor, request.actorUrl),
+        avatarUrl: actor?.icon,
+      ),
       trailing: Text(
         label,
         style: const TextStyle(
@@ -165,13 +173,17 @@ class _PendingFollowTile extends StatelessWidget {
       ),
     );
   }
+}
 
-  String _displayName(String actorUrl) {
-    try {
-      return Uri.parse(actorUrl).pathSegments.last;
-    } catch (_) {
-      return actorUrl;
-    }
+String _resolvedName(ApActor? actor, String actorUrl) {
+  if (actor != null) {
+    if (actor.name.isNotEmpty) return actor.name;
+    if (actor.preferredUsername.isNotEmpty) return actor.preferredUsername;
+  }
+  try {
+    return Uri.parse(actorUrl).pathSegments.last;
+  } catch (_) {
+    return actorUrl;
   }
 }
 

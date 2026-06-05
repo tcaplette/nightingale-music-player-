@@ -20,14 +20,12 @@ abstract interface class LibraryRepository {
   Future<List<String>> getGenres();
   Stream<List<String>> watchGenres();
 
-  Future<List<TrackModel>> getTracksByAlbum(int albumId);
-  Stream<List<TrackModel>> watchTracksByAlbum(int albumId);
+  Stream<List<TrackModel>> watchTracksByAlbum(String albumName, String? albumArtist);
 
-  Future<AlbumModel?> getAlbumById(int albumId);
+  Future<AlbumModel?> getAlbumByNameAndArtist(String albumName, String? albumArtist);
 
-  Future<List<AlbumModel>> getAlbumsByArtist(int artistId);
-  Future<List<TrackModel>> getTracksByArtist(int artistId);
-  Future<ArtistModel?> getArtistById(int artistId);
+  Future<List<AlbumModel>> getAlbumsByArtist(String artist);
+  Future<List<TrackModel>> getTracksByArtist(String artist);
   Future<List<TrackModel>> getTracksByGenre(String genre);
 
   Future<({
@@ -37,7 +35,7 @@ abstract interface class LibraryRepository {
   })>
   searchLibrary(String query);
 
-  // ── Discovery reads (all tracks regardless of isIncluded) ──────────────────
+  // ── Discovery reads (all tracks/albums regardless of isIncluded) ──────────
 
   Stream<List<TrackModel>> watchAllDiscoveredTracks();
   Stream<List<AlbumModel>> watchDiscoveredAlbums();
@@ -47,8 +45,8 @@ abstract interface class LibraryRepository {
 
   Future<void> includeTrack(int trackId);
   Future<void> excludeTrack(int trackId);
-  Future<void> includeAlbum(int albumId);
-  Future<void> excludeAlbum(int albumId);
+  Future<void> includeAlbum(String albumName, String? albumArtist);
+  Future<void> excludeAlbum(String albumName, String? albumArtist);
   Future<void> includeAllTracks();
   Future<void> excludeAllTracks();
 }

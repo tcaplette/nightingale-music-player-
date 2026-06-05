@@ -21,19 +21,23 @@ class FederationServer {
   int? get currentPort => _port;
   String? get currentAddress => _server?.address.address;
 
-  Future<void> start({required Router router}) async {
+  Future<void> start({required Router router, String? bindAddress}) async {
     if (_server != null) return;
 
     final handler = const Pipeline()
         .addMiddleware(_sizeLimitMiddleware(maxBytes: 64 * 1024))
         .addHandler(router.call);
 
+    final address = bindAddress != null
+        ? InternetAddress(bindAddress)
+        : InternetAddress.anyIPv4;
+
     // Try preferred port, then +1 and +2 as fallback.
     final candidates = [preferredPort, preferredPort + 1, preferredPort + 2];
     HttpServer? bound;
     for (final port in candidates) {
       try {
-        bound = await shelf_io.serve(handler, InternetAddress.anyIPv4, port);
+        bound = await shelf_io.serve(handler, address, port);
         break;
       } on SocketException {
         // Port in use — try next.

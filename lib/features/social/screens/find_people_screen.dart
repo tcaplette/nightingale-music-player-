@@ -4,11 +4,17 @@ import 'package:go_router/go_router.dart';
 import 'package:nightingale/core/activitypub/models/ap_actor.dart';
 import 'package:nightingale/core/di/service_locator.dart';
 import 'package:nightingale/core/federation/actor_resolver.dart';
+import 'package:nightingale/core/federation/nightingale_actor_validator.dart';
+import 'package:nightingale/core/http_server/federation_server.dart';
 import 'package:nightingale/features/federation/discovery/mastodon_auth_webview.dart';
+import 'package:nightingale/features/federation/network/network_binding_service.dart';
 import 'package:nightingale/features/federation/discovery/mastodon_bridge_service.dart';
 import 'package:nightingale/features/federation/discovery/mastodon_oauth_service.dart';
+import 'package:nightingale/features/federation/discovery/mastodon_profile_sync_service.dart';
+import 'package:nightingale/features/node_identity/node_identity_repository.dart';
 import 'package:nightingale/features/federation/discovery/peer_discovery_service.dart';
 import 'package:nightingale/features/onboarding/secure_storage_service.dart';
+import 'package:nightingale/core/repositories/social_repository.dart';
 import 'package:nightingale/features/social/providers/social_graph_notifier.dart';
 import 'package:nightingale/shared/components/identity/person_display.dart';
 import 'package:nightingale/shared/theme/app_colors.dart';
@@ -26,6 +32,11 @@ class _LookupFound extends _LookupState {
 class _LookupFailed extends _LookupState {
   _LookupFailed(this.message);
   final String message;
+}
+class _LookupMastodonHandle extends _LookupState {}
+class _LookupNotNightingale extends _LookupState {
+  _LookupNotNightingale(this.actor);
+  final ApActor actor;
 }
 
 // ── Mastodon import state ─────────────────────────────────────────────────────
@@ -142,6 +153,42 @@ class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
         .importSocialGraphAuthenticated(instance, accessToken);
     if (!mounted) return;
     setState(() => _importState = _ImportDone(matches));
+
+    // Publish our address to Mastodon now that we have a valid token.
+    _triggerProfileSync().ignore();
+  }
+
+  Future<void> _triggerProfileSync() async {
+    try {
+      final identityRepo = sl<NodeIdentityRepository>();
+      var publicAddress = await identityRepo.getPublicAddress();
+      print('NIGHTINGALE SYNC: _triggerProfileSync publicAddress=$publicAddress');
+
+      // STUN may not have resolved yet — run it now and wait rather than giving up.
+      if (publicAddress == null) {
+        print('NIGHTINGALE SYNC: publicAddress null — running evaluateAndBind now');
+        await sl<NetworkBindingService>().evaluateAndBind();
+        publicAddress = await identityRepo.getPublicAddress();
+        print('NIGHTINGALE SYNC: after evaluateAndBind publicAddress=$publicAddress');
+      }
+
+      if (publicAddress == null) {
+        print('NIGHTINGALE SYNC: no public address available — consumer-only mode');
+        return;
+      }
+
+      final actor = await identityRepo.getLocalActor();
+      final publicIp = publicAddress.split(':').first;
+      final serverPort = sl<FederationServer>().currentPort ?? 7777;
+      final publicActorUrl = 'http://$publicIp:$serverPort/users/${actor.preferredUsername}';
+      print('NIGHTINGALE SYNC: publicActorUrl=$publicActorUrl');
+      await sl<MastodonProfileSyncService>().sync(
+        actorUrl: publicActorUrl,
+        publicAddress: publicAddress,
+      );
+    } catch (e) {
+      print('NIGHTINGALE SYNC: _triggerProfileSync error — $e');
+    }
   }
 
   Future<void> _disconnect() async {
@@ -151,31 +198,53 @@ class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
     setState(() => _importState = _ImportIdle());
   }
 
+  static final _mastodonHandlePattern = RegExp(r'^@?[^@]+@[^@]+$');
+
   Future<void> _resolveByUsername(String input) async {
     final trimmed = input.trim();
     if (trimmed.isEmpty) return;
     setState(() => _lookupState = _LookupLoading());
 
-    ApActor? actor;
-    if (trimmed.contains('@') &&
-        !trimmed.startsWith('http://') &&
-        !trimmed.startsWith('https://')) {
-      final result = await sl<ActorResolver>().resolve(trimmed);
-      if (result is ResolveOk) actor = result.actor;
-    } else if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-      final result = await sl<ActorResolver>().resolve(trimmed);
-      if (result is ResolveOk) actor = result.actor;
-    } else {
-      actor = await sl<PeerDiscoveryService>().searchByUsername(trimmed);
+    // Intercept Mastodon handle format before attempting resolution.
+    if (_mastodonHandlePattern.hasMatch(trimmed) && !trimmed.startsWith('http')) {
+      debugPrint('[FindPeople] Mastodon handle intercepted: "$trimmed" — not resolving');
+      setState(() => _lookupState = _LookupMastodonHandle());
+      return;
     }
 
-    if (!mounted) return;
-    if (actor != null) {
-      setState(() => _lookupState = _LookupFound(actor!));
-    } else {
-      setState(() => _lookupState = _LookupFailed(
-            'Couldn\'t find "$trimmed". Try signing in with Mastodon to find people from your network.',
-          ));
+    try {
+      ApActor? actor;
+      if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        debugPrint('[FindPeople] Resolving URL: $trimmed');
+        final result = await sl<ActorResolver>().resolve(trimmed);
+        debugPrint('[FindPeople] ActorResolver result: ${result.runtimeType}');
+        if (result is ResolveOk) actor = result.actor;
+      } else {
+        debugPrint('[FindPeople] Username search: "$trimmed"');
+        actor = await sl<PeerDiscoveryService>().searchByUsername(trimmed);
+        debugPrint('[FindPeople] Username search result: ${actor?.id ?? 'not found'}');
+      }
+
+      if (!mounted) return;
+      if (actor != null) {
+        final isPeer = sl<NightingaleActorValidator>().isNightingalePeer(actor);
+        debugPrint('[FindPeople] Actor ${actor.id} isNightingalePeer=$isPeer '
+            'nightingalePublicAddress=${actor.nightingalePublicAddress}');
+        if (!isPeer) {
+          setState(() => _lookupState = _LookupNotNightingale(actor!));
+          return;
+        }
+        setState(() => _lookupState = _LookupFound(actor!));
+      } else {
+        setState(() => _lookupState = _LookupFailed(
+              'Couldn\'t find "$trimmed". Try signing in with Mastodon to find people from your network.',
+            ));
+      }
+    } catch (e, st) {
+      debugPrint('[FindPeople] _resolveByUsername error for "$trimmed": $e\n$st');
+      if (mounted) {
+        setState(() => _lookupState = _LookupFailed('Something went wrong. Please try again.'));
+      }
     }
   }
 
@@ -248,6 +317,10 @@ class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
             instance: _instanceController.text.trim(),
             onDisconnect: _disconnect,
           ),
+          if (sl<MastodonProfileSyncService>().needsReauth) ...[
+            const SizedBox(height: AppSpacing.sm),
+            _ReauthBanner(onReauth: _signInWithMastodon),
+          ],
           const SizedBox(height: AppSpacing.md),
           _MatchResults(matches: (_importState as _ImportDone).matches),
         ],
@@ -277,7 +350,7 @@ class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
           textInputAction: TextInputAction.search,
           onSubmitted: _resolveByUsername,
           decoration: InputDecoration(
-            hintText: 'Username or paste a shared link',
+            hintText: 'Paste a Nightingale actor URL',
             suffixIcon: IconButton(
               icon: const Icon(Icons.arrow_forward),
               onPressed: () => _resolveByUsername(_searchController.text),
@@ -306,12 +379,70 @@ class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
                   ),
             ),
           ),
+        if (_lookupState is _LookupMastodonHandle)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.md),
+            child: Text(
+              "That looks like a Mastodon handle. Use the 'From Mastodon' section above to see if they're on Nightingale.",
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppColors.neutral400,
+                  ),
+            ),
+          ),
+        if (_lookupState is _LookupNotNightingale)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.md),
+            child: Text(
+              "This is a standard ActivityPub account, not a Nightingale music node. If you know them on Mastodon, use the 'From Mastodon' section to check if they're on Nightingale.",
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppColors.neutral400,
+                  ),
+            ),
+          ),
       ],
     );
   }
 }
 
 // ── Sub-widgets ───────────────────────────────────────────────────────────────
+
+class _ReauthBanner extends StatelessWidget {
+  const _ReauthBanner({required this.onReauth});
+  final VoidCallback onReauth;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.errorContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline, size: 18, color: theme.colorScheme.error),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              'Re-sign in with Mastodon so Nightingale can publish your address.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onErrorContainer,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: onReauth,
+            child: const Text('Re-auth'),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _ConnectedBanner extends StatelessWidget {
   const _ConnectedBanner({required this.instance, required this.onDisconnect});
@@ -449,6 +580,7 @@ class _FollowButton extends ConsumerStatefulWidget {
 
 class _FollowButtonState extends ConsumerState<_FollowButton> {
   bool _loading = false;
+  String? _errorMessage;
   // Cached future so FutureBuilder doesn't restart on every rebuild.
   late Future<String?> _followStateFuture;
 
@@ -478,6 +610,11 @@ class _FollowButtonState extends ConsumerState<_FollowButton> {
           '_loading=$_loading',
         );
 
+        if (snapshot.hasError) {
+          debugPrint('[FollowButton] followState future error for ${widget.actorUrl}: ${snapshot.error}\n${snapshot.stackTrace}');
+          return FilledButton(onPressed: _follow, child: const Text('Follow'));
+        }
+
         final followState = snapshot.data;
 
         if (followState == 'accepted') {
@@ -487,7 +624,7 @@ class _FollowButtonState extends ConsumerState<_FollowButton> {
           return const OutlinedButton(onPressed: null, child: Text('Requested'));
         }
 
-        return FilledButton(
+        final button = FilledButton(
           onPressed: _loading ? null : _follow,
           child: _loading
               ? const SizedBox(
@@ -500,18 +637,58 @@ class _FollowButtonState extends ConsumerState<_FollowButton> {
                 )
               : const Text('Follow'),
         );
+
+        if (_errorMessage != null) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              button,
+              const SizedBox(height: 4),
+              Text(
+                _errorMessage!,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                  fontSize: 12,
+                ),
+                textAlign: TextAlign.end,
+              ),
+            ],
+          );
+        }
+        return button;
       },
     );
   }
 
   Future<void> _follow() async {
     debugPrint('[FollowButton] _follow() called for ${widget.actorUrl}');
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _errorMessage = null;
+    });
     try {
-      await ref.read(socialGraphProvider.notifier).followActor(widget.actorUrl);
-      debugPrint('[FollowButton] followActor() completed for ${widget.actorUrl}');
+      final result = await ref.read(socialGraphProvider.notifier).followActor(widget.actorUrl);
+      debugPrint('[FollowButton] followActor() → ${result.runtimeType} for ${widget.actorUrl}');
+      if (!mounted) return;
+      if (result is NotANightingalePeer) {
+        setState(() {
+          _loading = false;
+          _errorMessage = "This account isn't on Nightingale and can't share music with you.";
+          _refreshFollowState();
+        });
+        return;
+      }
     } catch (e, st) {
-      debugPrint('[FollowButton] followActor() threw: $e\n$st');
+      debugPrint('[FollowButton] followActor() threw for ${widget.actorUrl}: $e\n$st');
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _errorMessage = 'Follow failed. Check logs for details.';
+          _refreshFollowState();
+        });
+        return;
+      }
     }
     if (mounted) {
       setState(() {

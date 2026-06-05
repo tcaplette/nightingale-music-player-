@@ -10,6 +10,7 @@ import 'package:nightingale/features/recommendations/domain/recommendation_resul
 import 'package:nightingale/features/recommendations/domain/scoring_pipeline.dart';
 import 'package:nightingale/features/recommendations/domain/signal_event.dart';
 import 'package:nightingale/features/recommendations/domain/taste_affinity_scorer.dart';
+import 'package:nightingale/features/social/providers/federated_radio_provider.dart';
 
 const _kMinFollowCount = 1;
 const _kRescoreMinInterval = Duration(minutes: 30);
@@ -40,8 +41,10 @@ class RecommendationEngineNotifier
     return EngineState.empty;
   }
 
+  bool _isRescoringForRadio = false;
+
   /// Runs a full scoring pass in a background isolate.
-  Future<void> rescore({bool force = false}) async {
+  Future<void> rescore({bool force = false, String? seedArtist}) async {
     final current = state.valueOrNull;
     if (!force && current != null) {
       final elapsed = DateTime.now().toUtc().difference(current.lastScoredAt);
@@ -51,31 +54,66 @@ class RecommendationEngineNotifier
     state = const AsyncLoading();
 
     try {
-      final result = await compute(_runScoring, await _buildInput());
+      final result = await compute(_runScoring, await _buildInput(seedArtist: seedArtist));
       state = AsyncData(result);
     } catch (e, st) {
       state = AsyncError(e, st);
     }
   }
 
-  Future<_ScoringInputPayload> _buildInput() async {
+  /// Records a play/skip signal for a radio track and immediately rescores.
+  /// Bypasses the 30-minute throttle. Debounced so only one runs at a time.
+  Future<void> rescoreForRadio({
+    required String fingerprint,
+    required bool wasSkipped,
+  }) async {
+    if (_isRescoringForRadio) return;
+    _isRescoringForRadio = true;
+    try {
+      final signalRepo = sl<SignalRepository>();
+      final eventType = wasSkipped ? SignalEventType.skip : SignalEventType.play;
+      await signalRepo.recordEvent(SignalEvent(
+        trackFingerprint: fingerprint,
+        eventType: eventType,
+        timestampUtc: DateTime.now().toUtc(),
+        weight: eventType.defaultWeight,
+      ));
+      final seedArtist = ref.read(federatedRadioProvider).valueOrNull?.seedArtist;
+      await rescore(force: true, seedArtist: seedArtist);
+    } finally {
+      _isRescoringForRadio = false;
+    }
+  }
+
+  Future<_ScoringInputPayload> _buildInput({String? seedArtist}) async {
     final signalRepo = sl<SignalRepository>();
-    final socialRepo = sl<SocialRepository>();
-    final libraryRepo = sl<LibraryRepository>();
+final libraryRepo = sl<LibraryRepository>();
     final coldStartRepo = sl<ColdStartRepository>();
 
-    final following = await socialRepo.getFollowing();
-    final followingCount = following.length;
-    final actorIds = following.map((f) => f.remoteActorUrl).toList();
+    // Use confirmed Nightingale peers only — actors we have successfully fetched
+    // a library from. This excludes Mastodon social follows, which pollute
+    // followsTable but don't expose a /library endpoint.
+    final db = sl<AppDatabase>();
+    final cachedLibraries = await db.select(db.remoteLibrariesTable).get();
+    final actorIds = cachedLibraries.map((r) => r.actorUrl).toList();
+    final followingCount = actorIds.length;
+    if (kDebugMode) {
+      print('NIGHTINGALE RECO: nightingale peers (cached libraries)=$followingCount actors=$actorIds');
+    }
 
     final localScores = await signalRepo.getAllScores();
     final networkEvents = await signalRepo.getRecentNetworkEvents(
       window: const Duration(days: 7),
       actorIds: actorIds,
     );
+    if (kDebugMode) {
+      print('NIGHTINGALE RECO: networkEvents=${networkEvents.length} (last 7d from $followingCount Nightingale peers)');
+      final byType = <String, int>{};
+      for (final e in networkEvents) { byType[e.eventType.value] = (byType[e.eventType.value] ?? 0) + 1; }
+      print('NIGHTINGALE RECO: event types: $byType');
+    }
 
     // Resolve display names from actor cache
-    final db = sl<AppDatabase>();
     final actorCacheRows = await db.select(db.actorCacheTable).get();
     final actorDisplayNames = <String, String>{};
     for (final row in actorCacheRows) {
@@ -101,10 +139,16 @@ class RecommendationEngineNotifier
         .toSet();
 
     final coldStart = followingCount < _kMinFollowCount || networkEvents.isEmpty;
+    if (kDebugMode) {
+      print('NIGHTINGALE RECO: coldStart=$coldStart (followingCount=$followingCount minRequired=$_kMinFollowCount networkEvents=${networkEvents.length})');
+    }
 
     List<RecommendationResult> coldStartResults = [];
     if (coldStart) {
       coldStartResults = await coldStartRepo.getBootstrapResults();
+      if (kDebugMode) {
+        print('NIGHTINGALE RECO: coldStart bootstrap results=${coldStartResults.length} (withStreamUrl=${coldStartResults.where((r) => r.streamUrl != null).length})');
+      }
     }
 
     return _ScoringInputPayload(
@@ -116,6 +160,7 @@ class RecommendationEngineNotifier
       followingCount: followingCount,
       coldStart: coldStart,
       coldStartResults: coldStartResults,
+      seedArtist: seedArtist,
     );
   }
 }
@@ -138,6 +183,7 @@ EngineState _runScoring(_ScoringInputPayload payload) {
     localArtistsNormalized: payload.localArtistsNormalized,
     ownedFingerprints: payload.ownedFingerprints,
     followingCount: payload.followingCount,
+    seedArtist: payload.seedArtist,
   );
 
   final results = pipeline.run(input);
@@ -161,6 +207,7 @@ class _ScoringInputPayload {
     required this.followingCount,
     required this.coldStart,
     required this.coldStartResults,
+    this.seedArtist,
   });
 
   final Map<String, double> localScores;
@@ -171,6 +218,7 @@ class _ScoringInputPayload {
   final int followingCount;
   final bool coldStart;
   final List<RecommendationResult> coldStartResults;
+  final String? seedArtist;
 }
 
 final recommendationEngineProvider =

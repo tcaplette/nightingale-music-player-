@@ -11,6 +11,7 @@ import 'package:nightingale/core/debug/debug_overlay_setup.dart';
 import 'package:nightingale/core/debug/network_inspector.dart';
 import 'package:nightingale/core/federation/actor_resolver.dart';
 import 'package:nightingale/core/federation/http_signature_service.dart';
+import 'package:nightingale/core/federation/nightingale_actor_validator.dart';
 import 'package:nightingale/core/http_server/federation_router.dart';
 import 'package:nightingale/core/http_server/federation_server.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
@@ -18,7 +19,9 @@ import 'package:nightingale/core/repositories/app_info_repository.dart';
 import 'package:nightingale/features/federation/delivery/activity_delivery_service.dart';
 import 'package:nightingale/features/federation/discovery/mastodon_bridge_service.dart';
 import 'package:nightingale/features/federation/discovery/mastodon_oauth_service.dart';
+import 'package:nightingale/features/federation/discovery/mastodon_profile_sync_service.dart';
 import 'package:nightingale/features/federation/discovery/peer_discovery_service.dart';
+import 'package:nightingale/features/federation/network/network_binding_service.dart';
 import 'package:nightingale/features/federation/discovery/peer_exchange_service.dart';
 import 'package:nightingale/features/federation/moderation/moderation_repository.dart';
 import 'package:nightingale/features/federation/moderation/rate_limiter.dart';
@@ -56,6 +59,10 @@ import 'package:nightingale/features/recommendations/domain/cold_start_repositor
 import 'package:nightingale/features/social/activity_repository_impl.dart';
 import 'package:nightingale/core/resilience/activity_queue_service.dart';
 import 'package:nightingale/core/resilience/database_integrity_service.dart';
+import 'package:nightingale/features/federation/delivery/circuit_relay_client.dart';
+import 'package:nightingale/features/federation/nat/connection_negotiator.dart';
+import 'package:nightingale/features/federation/nat/hole_punch_service.dart';
+import 'package:nightingale/features/federation/serving/relay_handler.dart';
 import 'package:nightingale/features/onboarding/secure_storage_service.dart';
 import 'package:nightingale/features/social/social_repository_impl.dart';
 
@@ -149,6 +156,9 @@ Future<void> setupServiceLocator() async {
   // Actor resolver (cache-backed)
   _sl.registerSingleton<ActorResolver>(ActorResolver(db: db));
 
+  // Nightingale peer validator — synchronous, no dependencies
+  _sl.registerSingleton<NightingaleActorValidator>(const NightingaleActorValidator());
+
   // HTTP Signature service — keyId is built from the node base URL at DI time.
   // Once identity is set up the actual actor URL is used. The keyId here acts
   // as a best-effort placeholder for pre-onboarding signing scenarios.
@@ -187,6 +197,7 @@ Future<void> setupServiceLocator() async {
       actorResolver: _sl<ActorResolver>(),
       identityRepo: _sl<NodeIdentityRepository>(),
       moderation: _sl<ModerationRepository>(),
+      validator: _sl<NightingaleActorValidator>(),
     ),
   );
 
@@ -226,6 +237,24 @@ Future<void> setupServiceLocator() async {
     MastodonOAuthService(storage: _sl<SecureStorageService>()),
   );
 
+  // Mastodon profile sync — publishes STUN address to Mastodon profile fields
+  _sl.registerSingleton<MastodonProfileSyncService>(
+    MastodonProfileSyncService(
+      oauthService: _sl<MastodonOAuthService>(),
+    ),
+  );
+
+  // Remote library fetcher — lazy so ConnectionNegotiator (registered in Phase
+  // 9) is available when the singleton is first created.
+  _sl.registerLazySingleton<RemoteLibraryFetcher>(
+    () => RemoteLibraryFetcher(
+      db: db,
+      actorResolver: _sl<ActorResolver>(),
+      sigService: _sl<HttpSignatureService>(),
+      connectionNegotiator: _sl<ConnectionNegotiator>(),
+    ),
+  );
+
   // Social subscribing
   _sl.registerSingleton<SocialSubscribingService>(
     SocialSubscribingService(
@@ -234,6 +263,8 @@ Future<void> setupServiceLocator() async {
       delivery: _sl<ActivityDeliveryService>(),
       identityRepo: _sl<NodeIdentityRepository>(),
       peerExchange: _sl<PeerExchangeService>(),
+      libraryFetcher: _sl<RemoteLibraryFetcher>(),
+      validator: _sl<NightingaleActorValidator>(),
     ),
   );
 
@@ -267,6 +298,43 @@ Future<void> setupServiceLocator() async {
   final seedingPolicy = SeedingPowerPolicy(settings: settingsRepo);
   _sl.registerSingleton<SeedingPowerPolicy>(seedingPolicy);
 
+  // ── Phase 9: NAT traversal ───────────────────────────────────────────────
+
+  _sl.registerSingleton<HolePunchService>(
+    HolePunchService(
+      actorResolver: _sl<ActorResolver>(),
+      delivery: _sl<ActivityDeliveryService>(),
+      identityRepo: _sl<NodeIdentityRepository>(),
+      stunResolver: _sl<StunAddressResolver>(),
+    ),
+  );
+
+  _sl.registerSingleton<CircuitRelayClient>(
+    CircuitRelayClientImpl(
+      db: db,
+      actorResolver: _sl<ActorResolver>(),
+      delivery: _sl<ActivityDeliveryService>(),
+    ),
+  );
+
+  _sl.registerSingleton<ConnectionNegotiator>(
+    ConnectionNegotiator(
+      actorResolver: _sl<ActorResolver>(),
+      holePunchService: _sl<HolePunchService>(),
+      relayClient: _sl<CircuitRelayClient>(),
+      identityRepo: _sl<NodeIdentityRepository>(),
+      validator: _sl<NightingaleActorValidator>(),
+    ),
+  );
+
+  // Relay server — raw TCP on preferredPort + 1; active only when relay mode is enabled.
+  final relayServer = RelayServer(
+    port: _kFederationPort + 1,
+    settings: settingsRepo,
+  );
+  await relayServer.start();
+  _sl.registerSingleton<RelayServer>(relayServer);
+
   // Stream resolver (chunk → direct → cache → unavailable)
   _sl.registerSingleton<StreamResolver>(
     StreamResolver(
@@ -275,17 +343,10 @@ Future<void> setupServiceLocator() async {
       cacheManager: _sl<AudioCacheManager>(),
       chunkCacheManager: chunkCache,
       manifestRepository: manifestRepo,
+      connectionNegotiator: _sl<ConnectionNegotiator>(),
     ),
   );
 
-  // Remote library fetcher
-  _sl.registerSingleton<RemoteLibraryFetcher>(
-    RemoteLibraryFetcher(
-      actorResolver: _sl<ActorResolver>(),
-      sigService: _sl<HttpSignatureService>(),
-      social: _sl<SocialSubscribingService>(),
-    ),
-  );
 
   // Acoustic fingerprint service
   _sl.registerSingleton<AcousticFingerprintService>(
@@ -321,6 +382,16 @@ Future<void> setupServiceLocator() async {
     developer.log('DI: FederationServer failed: $e', name: 'nightingale.di');
     AppLogger.error('FederationServer failed to start: $e', tag: 'di');
   }
+
+  // Network binding service — detects NAT, selects best interface, binds server
+  _sl.registerSingleton<NetworkBindingService>(
+    NetworkBindingService(
+      stunResolver: _sl<StunAddressResolver>(),
+      server: _sl<FederationServer>(),
+      identityRepo: _sl<NodeIdentityRepository>(),
+      profileSync: _sl<MastodonProfileSyncService>(),
+    ),
+  );
 
   // mDNS advertiser — start after server is bound so port is known
   // Startup delivery sweep — re-enqueue stale pending/retrying activities

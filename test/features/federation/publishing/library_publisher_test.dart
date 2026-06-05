@@ -54,43 +54,37 @@ class _FakeLibraryRepo implements LibraryRepository {
   @override
   Stream<List<AlbumModel>> watchAlbums() async* { yield <AlbumModel>[]; }
   @override
-  Future<List<TrackModel>> getTracksByAlbum(int albumId) async => <TrackModel>[];
+  Stream<List<TrackModel>> watchTracksByAlbum(String albumName, String? albumArtist) async* { yield <TrackModel>[]; }
   @override
-  Stream<List<TrackModel>> watchTracksByAlbum(int albumId) async* { yield <TrackModel>[]; }
-  @override
-  Future<AlbumModel?> getAlbumById(int albumId) async => null;
+  Future<AlbumModel?> getAlbumByNameAndArtist(String albumName, String? albumArtist) async => null;
   @override
   Future<List<ArtistModel>> getArtists() async => <ArtistModel>[];
   @override
   Stream<List<ArtistModel>> watchArtists() async* { yield <ArtistModel>[]; }
   @override
-  Future<List<AlbumModel>> getAlbumsByArtist(int artistId) async => <AlbumModel>[];
+  Future<List<AlbumModel>> getAlbumsByArtist(String artist) async => <AlbumModel>[];
   @override
-  Future<List<TrackModel>> getTracksByArtist(int artistId) async => <TrackModel>[];
-  @override
-  Future<ArtistModel?> getArtistById(int artistId) async => null;
+  Future<List<TrackModel>> getTracksByArtist(String artist) async => <TrackModel>[];
   @override
   Future<List<String>> getGenres() async => <String>[];
   @override
   Future<List<TrackModel>> getTracksByGenre(String genre) async => <TrackModel>[];
   @override
   Future<({List<TrackModel> tracks, List<AlbumModel> albums, List<ArtistModel> artists})> searchLibrary(String query) async => (tracks: <TrackModel>[], albums: <AlbumModel>[], artists: <ArtistModel>[]);
-  // ── Discovery reads ────────────────────────────────────────────────────────
   @override
   Stream<List<TrackModel>> watchAllDiscoveredTracks() async* { yield <TrackModel>[]; }
   @override
   Stream<List<AlbumModel>> watchDiscoveredAlbums() async* { yield <AlbumModel>[]; }
   @override
   Future<int> getDiscoveredTrackCount() async => 0;
-  // ── Inclusion mutations ────────────────────────────────────────────────────
   @override
   Future<void> includeTrack(int trackId) async {}
   @override
   Future<void> excludeTrack(int trackId) async {}
   @override
-  Future<void> includeAlbum(int albumId) async {}
+  Future<void> includeAlbum(String albumName, String? albumArtist) async {}
   @override
-  Future<void> excludeAlbum(int albumId) async {}
+  Future<void> excludeAlbum(String albumName, String? albumArtist) async {}
   @override
   Future<void> includeAllTracks() async {}
   @override
@@ -193,7 +187,7 @@ void main() {
       final page = await publisher.buildCollectionPage(page: 1, pageSize: 10);
       expect(page, isNotNull);
       expect(page!.orderedItems.length, 2);
-      
+
       final firstAudio = ApAudio.fromJson(page.orderedItems.first as Map<String, dynamic>);
       expect(firstAudio.name, 'Song One');
       expect(firstAudio.artist, 'Artist A');

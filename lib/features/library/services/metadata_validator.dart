@@ -38,8 +38,7 @@ class MetadataValidator {
 
     if (_isEmpty(track.title)) missing.add('title');
     if (_isEmpty(track.artist)) missing.add('artist');
-    // albumName may be null if the query didn't join; fall back to albumId
-    if (_isEmpty(track.albumName) && track.albumId == null) missing.add('album');
+    if (_isEmpty(track.albumName)) missing.add('album');
     if (_isEmpty(track.genre)) missing.add('genre');
     if (track.releaseYear == null) missing.add('releaseYear');
 

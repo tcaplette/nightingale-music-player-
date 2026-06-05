@@ -1,12 +1,15 @@
 import 'dart:convert';
 
+import 'package:drift/drift.dart' show Value;
+import 'package:nightingale/core/activitypub/models/ap_actor.dart';
 import 'package:nightingale/core/activitypub/models/ap_audio.dart';
 import 'package:nightingale/core/activitypub/models/ap_collection.dart';
+import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/core/di/service_locator.dart';
 import 'package:nightingale/core/federation/actor_resolver.dart';
 import 'package:nightingale/core/federation/http_signature_service.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
-import 'package:nightingale/features/federation/social/social_subscribing_service.dart';
+import 'package:nightingale/features/federation/nat/connection_negotiator.dart';
 import 'package:nightingale/features/library/models/track_model.dart';
 import 'package:http/http.dart' as http;
 
@@ -15,16 +18,19 @@ const _tag = 'remote_library';
 /// Fetches and parses remote library collections from federated nodes.
 class RemoteLibraryFetcher {
   RemoteLibraryFetcher({
+    required AppDatabase db,
     required ActorResolver actorResolver,
     required HttpSignatureService sigService,
-    required SocialSubscribingService social,
-  })  : _actorResolver = actorResolver,
+    ConnectionNegotiator? connectionNegotiator,
+  })  : _db = db,
+        _actorResolver = actorResolver,
         _sigService = sigService,
-        _social = social;
+        _connectionNegotiator = connectionNegotiator;
 
+  final AppDatabase _db;
   final ActorResolver _actorResolver;
   final HttpSignatureService _sigService;
-  final SocialSubscribingService _social;
+  final ConnectionNegotiator? _connectionNegotiator;
 
   /// Fetches a remote actor's library collection.
   /// Returns null if the library is private or we're not authorized.
@@ -38,8 +44,20 @@ class RemoteLibraryFetcher {
       }
       final actor = result.actor;
 
-      // Construct library URL
-      final libraryUrl = '${actor.id}/library';
+      // Resolve connection endpoint — falls back to direct address when
+      // ConnectionNegotiator is not wired up.
+      String baseUrl;
+      if (_connectionNegotiator != null) {
+        final resolved = await _connectionNegotiator.resolveEndpoint(actorUrl);
+        if (resolved == null) {
+          AppLogger.warning('No path to $actorUrl', tag: _tag);
+          return null;
+        }
+        baseUrl = resolved;
+      } else {
+        baseUrl = _baseUrl(actor);
+      }
+      final libraryUrl = '$baseUrl/users/${actor.preferredUsername}/library';
 
       // Sign the request with HTTP Signature
       final request = http.Request('GET', Uri.parse(libraryUrl));
@@ -69,16 +87,47 @@ class RemoteLibraryFetcher {
       final json = jsonDecode(body) as Map<String, dynamic>;
       final collection = ApOrderedCollection.fromJson(json);
 
-      // Fetch first page if available
+      // Fetch first page if available.
+      // Resolve relative page URLs against the actor's transport base.
+      List<TrackModel> tracks = [];
       if (collection.first != null) {
-        return await _fetchCollectionPage(collection.first!, actorUrl);
+        final rawPageUrl = collection.first!;
+        final pageUrl = Uri.tryParse(rawPageUrl)?.isAbsolute == true
+            ? rawPageUrl
+            : '$baseUrl$rawPageUrl';
+        tracks = await _fetchCollectionPage(pageUrl, actorUrl);
       }
 
-      return [];
+      await _saveToCache(actorUrl, tracks);
+      AppLogger.info(
+        'Cached ${tracks.length} tracks from $actorUrl',
+        tag: _tag,
+      );
+      return tracks;
     } catch (e) {
       AppLogger.error('Failed to fetch library from $actorUrl', tag: _tag, error: e);
       return null;
     }
+  }
+
+  Future<void> _saveToCache(String actorUrl, List<TrackModel> tracks) async {
+    final items = tracks.map((t) => {
+      'name': t.title,
+      'artist': t.artist,
+      if (t.albumName != null) 'album': t.albumName,
+      if (t.genre != null) 'genre': t.genre,
+      'duration': t.durationMs ~/ 1000,
+      if (t.streamUrl != null) 'stream_url': t.streamUrl,
+      if (t.artworkPath != null) 'artwork_url': t.artworkPath,
+    }).toList();
+
+    await _db.into(_db.remoteLibrariesTable).insertOnConflictUpdate(
+      RemoteLibrariesTableCompanion(
+        actorUrl: Value(actorUrl),
+        collectionJson: Value(jsonEncode({'items': items})),
+        fetchedAt: Value(DateTime.now()),
+      ),
+    );
   }
 
   /// Fetches a specific collection page.
@@ -103,6 +152,16 @@ class RemoteLibraryFetcher {
       AppLogger.error('Failed to fetch collection page: $pageUrl', tag: _tag, error: e);
       return [];
     }
+  }
+
+  /// Returns the HTTP server base URL for [actor].
+  /// Uses the STUN-discovered public address when available; falls back to
+  /// stripping the user path from [ApActor.id].
+  static String _baseUrl(ApActor actor) {
+    if (actor.nightingalePublicAddress != null) {
+      return 'http://${actor.nightingalePublicAddress}';
+    }
+    return actor.id.replaceAll('/users/${actor.preferredUsername}', '');
   }
 
   TrackModel _audioToTrack(Map<String, dynamic> json, String sourceActorUrl) {

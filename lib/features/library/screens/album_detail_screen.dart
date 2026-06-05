@@ -8,13 +8,20 @@ import 'package:nightingale/shared/components/buttons/app_button.dart';
 import 'package:nightingale/shared/theme/app_spacing.dart';
 
 class AlbumDetailScreen extends ConsumerWidget {
-  const AlbumDetailScreen({super.key, required this.albumId});
-  final int albumId;
+  const AlbumDetailScreen({
+    super.key,
+    required this.albumName,
+    required this.albumArtist,
+  });
+
+  final String albumName;
+  final String albumArtist;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final albumAsync = ref.watch(albumDetailProvider(albumId));
-    final tracksAsync = ref.watch(albumTracksProvider(albumId));
+    final key = (albumName: albumName, albumArtist: albumArtist);
+    final albumAsync = ref.watch(albumDetailProvider(key));
+    final tracksAsync = ref.watch(albumTracksProvider(key));
     final textTheme = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
 
@@ -23,17 +30,19 @@ class AlbumDetailScreen extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
         data: (album) {
-          if (album == null) {
-            return const Center(child: Text('Album not found'));
-          }
+          final artworkPath = album?.artworkPath;
+          final displayName = album?.name ?? albumName;
+          final displayArtist = album?.artist ?? albumArtist;
+          final releaseYear = album?.releaseYear;
+
           return CustomScrollView(
             slivers: [
               SliverToBoxAdapter(
                 child: _AlbumHeader(
-                  artworkPath: album.artworkPath,
-                  albumName: album.name,
-                  artistName: album.artist,
-                  releaseYear: album.releaseYear,
+                  artworkPath: artworkPath,
+                  albumName: displayName,
+                  artistName: displayArtist,
+                  releaseYear: releaseYear,
                 ),
               ),
               SliverToBoxAdapter(
@@ -66,6 +75,8 @@ class AlbumDetailScreen extends ConsumerWidget {
                   delegate: SliverChildBuilderDelegate(
                     (context, i) {
                       final track = tracks[i];
+                      // ignore: avoid_print
+                      print('[AlbumDetail] "${track.title}" trackNumber=${track.trackNumber}');
                       return ListTile(
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: AppSpacing.md,
