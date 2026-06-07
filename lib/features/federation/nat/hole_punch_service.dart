@@ -4,16 +4,20 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:nightingale/core/activitypub/models/ap_activity.dart';
+import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/core/federation/actor_resolver.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
 import 'package:nightingale/features/federation/delivery/activity_delivery_service.dart';
+import 'package:nightingale/features/federation/discovery/mastodon_signaling_service.dart';
 import 'package:nightingale/features/federation/nat/peer_address_activity.dart';
 import 'package:nightingale/features/federation/stun/stun_address_resolver.dart';
 import 'package:nightingale/features/node_identity/node_identity_repository.dart';
+import 'package:nightingale/features/onboarding/secure_storage_service.dart';
 
 const _tag = 'hole_punch';
 const _udpIntervalMs = 200;
 const _holePunchTimeout = Duration(seconds: 8);
+const _mastodonSignalTimeout = Duration(seconds: 20);
 
 class HolePunchService {
   HolePunchService({
@@ -21,15 +25,24 @@ class HolePunchService {
     required ActivityDeliveryService delivery,
     required NodeIdentityRepository identityRepo,
     required StunAddressResolver stunResolver,
+    required AppDatabase db,
+    required SecureStorageService storage,
+    MastodonSignalingService? signaling,
   })  : _actorResolver = actorResolver,
         _delivery = delivery,
         _identityRepo = identityRepo,
-        _stunResolver = stunResolver;
+        _stunResolver = stunResolver,
+        _db = db,
+        _storage = storage,
+        _signaling = signaling;
 
   final ActorResolver _actorResolver;
   final ActivityDeliveryService _delivery;
   final NodeIdentityRepository _identityRepo;
   final StunAddressResolver _stunResolver;
+  final AppDatabase _db;
+  final SecureStorageService _storage;
+  final MastodonSignalingService? _signaling;
 
   // nonce → completer that resolves with the peer's public address once their
   // PeerAddress activity arrives.
@@ -38,9 +51,12 @@ class HolePunchService {
   /// Attempts UDP hole punching to [actorUrl].
   ///
   /// Returns the peer's reachable `host:port` if punching succeeds within
-  /// 8 seconds, null on timeout (symmetric NAT or Mastodon delivery too slow).
+  /// the timeout, null on failure. Uses the Mastodon DM fallback path when
+  /// both own and peer Mastodon handles are known.
   Future<String?> attemptHolePunch(String actorUrl) async {
+    print('DEBUG_HOLEPUNCH: attemptHolePunch called for $actorUrl');
     final result = await _actorResolver.resolve(actorUrl);
+    print('DEBUG_HOLEPUNCH: actor resolve result=${result.runtimeType}');
     if (result is! ResolveOk) {
       AppLogger.warning(
         'HolePunch: cannot resolve actor $actorUrl',
@@ -83,6 +99,15 @@ class HolePunchService {
     }
     final localActorUrl = await _identityRepo.getActorUrl();
 
+    // Resolve Mastodon handles for the DM fallback path.
+    String? ownMastodonHandle;
+    String? peerMastodonHandle;
+    if (_signaling != null) {
+      ownMastodonHandle = await _storage.getMastodonHandle();
+      peerMastodonHandle = await _peerMastodonHandle(actorUrl);
+    }
+    print('DEBUG_HOLEPUNCH: ownHandle=$ownMastodonHandle peerHandle=$peerMastodonHandle signalingAvailable=${_signaling != null}');
+
     final nonce = _generateNonce();
     final localIp = publicAddr?.split(':').first ?? '0.0.0.0';
     final publicAddress = publicAddr ?? '$localIp:$localPort';
@@ -90,7 +115,8 @@ class HolePunchService {
 
     AppLogger.info(
       'HolePunch: starting session nonce=$nonce '
-      'localAddress=$localAddress publicAddress=$publicAddress → $actorUrl',
+      'localAddress=$localAddress publicAddress=$publicAddress → $actorUrl '
+      'mastodonFallback=${peerMastodonHandle != null}',
       tag: _tag,
     );
 
@@ -105,18 +131,60 @@ class HolePunchService {
       publicAddress: publicAddress,
       localAddress: localAddress,
       timestamp: DateTime.now().toUtc(),
+      senderMastodonHandle: ownMastodonHandle,
     );
 
-    // Deliver to peer's inbox (works when peer has a public Nightingale address;
-    // gracefully times out if peer is fully NATted).
+    // Deliver to peer's Nightingale inbox (works when peer has a public address;
+    // gracefully fails silently if peer is fully NATted).
     await _delivery.deliver(peerAddress.toApActivity(), peerActor.inbox);
     AppLogger.info(
       'HolePunch: sent PeerAddress to ${peerActor.inbox} nonce=$nonce',
       tag: _tag,
     );
 
+    // Mastodon DM fallback — fire in parallel when handles are available.
+    Timer? pollTimer;
+    if (_signaling != null &&
+        ownMastodonHandle != null &&
+        peerMastodonHandle != null) {
+      AppLogger.info(
+        'HolePunch: sending PeerAddress via Mastodon DM to $peerMastodonHandle '
+        'nonce=$nonce',
+        tag: _tag,
+      );
+      _signaling!
+          .sendSignal(
+            targetMastodonHandle: peerMastodonHandle,
+            signal: peerAddress,
+          )
+          .ignore();
+
+      // Poll for echo at 1s intervals while waiting.
+      var pollBusy = false;
+      pollTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
+        if (pollBusy) return;
+        pollBusy = true;
+        try {
+          final signals = await _signaling!.pollOnce();
+          for (final signal in signals) {
+            AppLogger.info(
+              'HolePunch: received PeerAddress via Mastodon poll '
+              'nonce=${signal.sessionNonce}',
+              tag: _tag,
+            );
+            _handleParsedPeerAddress(signal);
+          }
+        } finally {
+          pollBusy = false;
+        }
+      });
+    }
+
+    final timeout =
+        pollTimer != null ? _mastodonSignalTimeout : _holePunchTimeout;
+
     try {
-      final peerAddrActivity = await completer.future.timeout(_holePunchTimeout);
+      final peerAddrActivity = await completer.future.timeout(timeout);
       if (peerAddrActivity == null) {
         socket.close();
         return null;
@@ -150,19 +218,16 @@ class HolePunchService {
       );
 
       // Fire UDP packets at the peer's public address at 200ms intervals.
-      // Each packet contains the session nonce so the peer can validate.
       final nonceBytes = Uint8List.fromList(nonce.codeUnits);
       final peerInternetAddr = InternetAddress(peerHost);
 
       final successCompleter = Completer<bool>();
 
-      // Send loop.
       final timer = Timer.periodic(
         const Duration(milliseconds: _udpIntervalMs),
         (_) => socket.send(nonceBytes, peerInternetAddr, peerPort),
       );
 
-      // Listen for a valid UDP response containing the nonce.
       final sub = socket.listen((event) {
         if (event != RawSocketEvent.read) return;
         final datagram = socket.receive();
@@ -202,13 +267,12 @@ class HolePunchService {
       _pendingByNonce.remove(nonce);
       socket.close();
       return null;
+    } finally {
+      pollTimer?.cancel();
     }
   }
 
   /// Called by the inbox handler when a [ApPeerAddress] activity arrives.
-  ///
-  /// If the nonce matches a waiting session, the completer is resolved and
-  /// we echo our own address back to the peer so they can start their fire loop.
   void handleIncomingPeerAddress(ApPeerAddress apActivity) {
     final parsed = PeerAddressActivity.fromApActivity(apActivity);
     if (parsed == null) {
@@ -219,7 +283,23 @@ class HolePunchService {
       );
       return;
     }
+    _handleParsedPeerAddress(parsed);
+  }
 
+  /// Called by [MastodonSignalingService] background polling when a signal
+  /// arrives via Mastodon DM rather than the Nightingale inbox.
+  void handleIncomingPeerAddressFromMastodon(PeerAddressActivity signal) {
+    AppLogger.info(
+      'HolePunch: incoming PeerAddress via Mastodon poll '
+      'nonce=${signal.sessionNonce} from ${signal.fromActorUrl}',
+      tag: _tag,
+    );
+    _handleParsedPeerAddress(signal);
+  }
+
+  // ── Private ───────────────────────────────────────────────────────────────
+
+  void _handleParsedPeerAddress(PeerAddressActivity parsed) {
     AppLogger.info(
       'HolePunch: incoming PeerAddress nonce=${parsed.sessionNonce} from ${parsed.fromActorUrl}',
       tag: _tag,
@@ -238,10 +318,8 @@ class HolePunchService {
         '(this node is acting as the server side — will echo back)',
         tag: _tag,
       );
+      _echoBack(parsed).ignore();
     }
-
-    // Echo our own PeerAddress back so the peer can complete their session.
-    _echoBack(parsed).ignore();
   }
 
   Future<void> _echoBack(PeerAddressActivity incoming) async {
@@ -264,6 +342,9 @@ class HolePunchService {
       );
     }
     final localActorUrl = await _identityRepo.getActorUrl();
+    final ownMastodonHandle = _signaling != null
+        ? await _storage.getMastodonHandle()
+        : null;
 
     final echo = PeerAddressActivity(
       id: '$localActorUrl/peer-address-echo/${DateTime.now().millisecondsSinceEpoch}',
@@ -273,6 +354,7 @@ class HolePunchService {
       publicAddress: publicAddr ?? '0.0.0.0:0',
       localAddress: publicAddr ?? '0.0.0.0:0',
       timestamp: DateTime.now().toUtc(),
+      senderMastodonHandle: ownMastodonHandle,
     );
 
     AppLogger.info(
@@ -281,6 +363,21 @@ class HolePunchService {
       tag: _tag,
     );
     await _delivery.deliver(echo.toApActivity(), peerActor.inbox);
+
+    // Mastodon DM echo-back when the incoming signal carried the sender's handle.
+    if (_signaling != null && incoming.senderMastodonHandle != null) {
+      AppLogger.info(
+        'HolePunch: sending echo via Mastodon DM to ${incoming.senderMastodonHandle} '
+        'nonce=${incoming.sessionNonce}',
+        tag: _tag,
+      );
+      _signaling!
+          .sendSignal(
+            targetMastodonHandle: incoming.senderMastodonHandle!,
+            signal: echo,
+          )
+          .ignore();
+    }
 
     // Also start firing UDP packets at the peer so our NAT creates a mapping.
     final parts = incoming.publicAddress.split(':');
@@ -332,7 +429,6 @@ class HolePunchService {
       }
     }
 
-    // Fire for 8 seconds to keep the NAT mapping open.
     var ticks = 0;
     final timer = Timer.periodic(const Duration(milliseconds: _udpIntervalMs), (_) {
       if (closed) return;
@@ -343,7 +439,6 @@ class HolePunchService {
       }
     });
 
-    // Echo any nonce packets back (so A's listener resolves).
     echoSocket.listen(
       (event) {
         if (event != RawSocketEvent.read) return;
@@ -365,6 +460,13 @@ class HolePunchService {
     await Future.delayed(_holePunchTimeout);
     timer.cancel();
     closeOnce();
+  }
+
+  Future<String?> _peerMastodonHandle(String actorUrl) async {
+    final row = await (_db.select(_db.followsTable)
+          ..where((t) => t.remoteActorUrl.equals(actorUrl)))
+        .getSingleOrNull();
+    return row?.mastodonHandle;
   }
 
   String _generateNonce() {

@@ -1,5 +1,29 @@
 # Nightingale — Agent Rules
 
+# Karparthy Rules:
+
+# Project Architectural & Quality Guidelines
+
+## 1. Goal-Driven Execution
+* Define exact success criteria before generating code. 
+* Do not make sweeping assumptions. If specifications are vague, ask the user for clarification.
+* Write tests that reproduce the bug or edge case, and make them pass. 
+
+## 2. Simplicity & Readability First
+* No "AI slop." Do not generate over-engineered abstractions, bloated helpers, or unnecessary classes.
+* Never leave empty `catch(e) {}` blocks. Always handle, log, or throw the error.
+* Avoid redundant or obvious code comments (e.g., `// Set the variable x to 5`). Only comment "why" a complex business rule exists.
+
+## 3. Surgical Changes
+* Touch only what you must to fulfill the request. 
+* Do not refactor unrelated code, and never change formatting in files you haven't explicitly modified.
+* Do not delete dead code you notice unless it is requested. Mention it to the user.
+
+## 4. Anti-Slop Code Patterns (Prohibited)
+* **Duplication**: Do not create generic, duplicate utility functions if standard libraries suffice.
+* **No "Not just X, but also Y" Code**: Avoid verbose, overly complicated structures when a straightforward implementation works.
+* **Overuse of M-Dashes or Fluff**: Ensure your written code explanations are direct, using active voice.
+
 ## Debugging Rule
 
 If an agent has been investigating a bug or error in code for more than 1 minute without identifying the root cause, it must **stop immediately** and write debugging code (print statements, logging, error handlers) to surface the actual error at runtime. Do not continue reading files or reasoning about the cause. Write the debugging code, tell the user to run the app, and wait for the output.

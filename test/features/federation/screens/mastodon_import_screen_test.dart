@@ -19,7 +19,7 @@ class _StubSocialGraphNotifier extends StateNotifier<SocialGraphState>
   _StubSocialGraphNotifier() : super(const SocialGraphState());
 
   @override
-  Future<FollowResult> followActor(String actorUrl) async {
+  Future<FollowResult> followActor(String actorUrl, {String? mastodonHandle}) async {
     state = SocialGraphState(
       following: [
         ...state.following,

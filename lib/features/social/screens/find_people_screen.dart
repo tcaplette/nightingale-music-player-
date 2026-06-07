@@ -1,20 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-import 'package:nightingale/core/activitypub/models/ap_actor.dart';
 import 'package:nightingale/core/di/service_locator.dart';
-import 'package:nightingale/core/federation/actor_resolver.dart';
-import 'package:nightingale/core/federation/nightingale_actor_validator.dart';
-import 'package:nightingale/core/http_server/federation_server.dart';
 import 'package:nightingale/features/federation/discovery/mastodon_auth_webview.dart';
 import 'package:nightingale/features/federation/network/network_binding_service.dart';
 import 'package:nightingale/features/federation/discovery/mastodon_bridge_service.dart';
 import 'package:nightingale/features/federation/discovery/mastodon_oauth_service.dart';
 import 'package:nightingale/features/federation/discovery/mastodon_profile_sync_service.dart';
-import 'package:nightingale/features/node_identity/node_identity_repository.dart';
-import 'package:nightingale/features/federation/discovery/peer_discovery_service.dart';
 import 'package:nightingale/features/onboarding/secure_storage_service.dart';
-import 'package:nightingale/core/repositories/social_repository.dart';
 import 'package:nightingale/features/social/providers/social_graph_notifier.dart';
 import 'package:nightingale/shared/components/identity/person_display.dart';
 import 'package:nightingale/shared/theme/app_colors.dart';
@@ -26,23 +18,25 @@ sealed class _LookupState {}
 class _LookupIdle extends _LookupState {}
 class _LookupLoading extends _LookupState {}
 class _LookupFound extends _LookupState {
-  _LookupFound(this.actor);
-  final ApActor actor;
+  _LookupFound(this.match, this.mastodonHandle);
+  final MastodonMatch match;
+  final String mastodonHandle;
 }
 class _LookupFailed extends _LookupState {
   _LookupFailed(this.message);
   final String message;
 }
-class _LookupMastodonHandle extends _LookupState {}
-class _LookupNotNightingale extends _LookupState {
-  _LookupNotNightingale(this.actor);
-  final ApActor actor;
-}
+class _LookupNotNightingale extends _LookupState {}
 
 // ── Mastodon import state ─────────────────────────────────────────────────────
 
 sealed class _ImportState {}
 class _ImportIdle extends _ImportState {}
+class _ImportAuthenticated extends _ImportState {
+  _ImportAuthenticated(this.instance, this.token);
+  final String instance;
+  final String token;
+}
 class _ImportLoading extends _ImportState {}
 class _ImportDone extends _ImportState {
   _ImportDone(this.matches);
@@ -82,23 +76,19 @@ class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
   }
 
   Future<void> _initFromStoredAccount() async {
-    // Check for a handle stored during onboarding first.
     final storedHandle = await sl<SecureStorageService>().getMastodonHandle();
-    final instance = storedHandle != null
-        ? _instanceFromHandle(storedHandle)
-        : _instanceController.text.trim();
+    if (storedHandle == null) return;
 
+    final instance = _instanceFromHandle(storedHandle);
     if (instance == null || instance.isEmpty) return;
 
-    // Pre-fill with the stored handle so the user doesn't have to re-type it.
-    if (_instanceController.text.trim().isEmpty && storedHandle != null) {
+    if (_instanceController.text.trim().isEmpty) {
       _instanceController.text = storedHandle;
     }
 
-    // If we already have an OAuth token, run the import automatically.
     final token = await sl<MastodonOAuthService>().getStoredToken(instance);
     if (token != null) {
-      await _runImport(instance, token);
+      setState(() => _importState = _ImportAuthenticated(instance, token));
     }
   }
 
@@ -139,6 +129,11 @@ class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
 
     switch (result) {
       case OAuthSuccess(:final accessToken, :final instance):
+        final handle = await sl<MastodonOAuthService>()
+            .fetchAccountHandle(instance, accessToken);
+        if (handle != null) {
+          await sl<SecureStorageService>().setMastodonHandle(handle);
+        }
         await _runImport(instance, accessToken);
       case OAuthCancelled():
         setState(() => _importState = _ImportIdle());
@@ -159,36 +154,9 @@ class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
   }
 
   Future<void> _triggerProfileSync() async {
-    try {
-      final identityRepo = sl<NodeIdentityRepository>();
-      var publicAddress = await identityRepo.getPublicAddress();
-      print('NIGHTINGALE SYNC: _triggerProfileSync publicAddress=$publicAddress');
-
-      // STUN may not have resolved yet — run it now and wait rather than giving up.
-      if (publicAddress == null) {
-        print('NIGHTINGALE SYNC: publicAddress null — running evaluateAndBind now');
-        await sl<NetworkBindingService>().evaluateAndBind();
-        publicAddress = await identityRepo.getPublicAddress();
-        print('NIGHTINGALE SYNC: after evaluateAndBind publicAddress=$publicAddress');
-      }
-
-      if (publicAddress == null) {
-        print('NIGHTINGALE SYNC: no public address available — consumer-only mode');
-        return;
-      }
-
-      final actor = await identityRepo.getLocalActor();
-      final publicIp = publicAddress.split(':').first;
-      final serverPort = sl<FederationServer>().currentPort ?? 7777;
-      final publicActorUrl = 'http://$publicIp:$serverPort/users/${actor.preferredUsername}';
-      print('NIGHTINGALE SYNC: publicActorUrl=$publicActorUrl');
-      await sl<MastodonProfileSyncService>().sync(
-        actorUrl: publicActorUrl,
-        publicAddress: publicAddress,
-      );
-    } catch (e) {
-      print('NIGHTINGALE SYNC: _triggerProfileSync error — $e');
-    }
+    // Re-run the full evaluate-and-bind cycle now that we have a Mastodon token.
+    // NetworkBindingService builds the correct public actor URL and syncs it.
+    sl<NetworkBindingService>().evaluateAndBind().ignore();
   }
 
   Future<void> _disconnect() async {
@@ -198,53 +166,31 @@ class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
     setState(() => _importState = _ImportIdle());
   }
 
-  static final _mastodonHandlePattern = RegExp(r'^@?[^@]+@[^@]+$');
-
-  Future<void> _resolveByUsername(String input) async {
+  Future<void> _lookupByHandle(String input) async {
     final trimmed = input.trim();
     if (trimmed.isEmpty) return;
-    setState(() => _lookupState = _LookupLoading());
 
-    // Intercept Mastodon handle format before attempting resolution.
-    if (_mastodonHandlePattern.hasMatch(trimmed) && !trimmed.startsWith('http')) {
-      debugPrint('[FindPeople] Mastodon handle intercepted: "$trimmed" — not resolving');
-      setState(() => _lookupState = _LookupMastodonHandle());
+    if (!trimmed.contains('@')) {
+      setState(() => _lookupState = _LookupFailed(
+            'Enter a Mastodon handle like @alice@mastodon.social',
+          ));
       return;
     }
 
-    try {
-      ApActor? actor;
-      if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-        debugPrint('[FindPeople] Resolving URL: $trimmed');
-        final result = await sl<ActorResolver>().resolve(trimmed);
-        debugPrint('[FindPeople] ActorResolver result: ${result.runtimeType}');
-        if (result is ResolveOk) actor = result.actor;
-      } else {
-        debugPrint('[FindPeople] Username search: "$trimmed"');
-        actor = await sl<PeerDiscoveryService>().searchByUsername(trimmed);
-        debugPrint('[FindPeople] Username search result: ${actor?.id ?? 'not found'}');
-      }
+    setState(() => _lookupState = _LookupLoading());
 
-      if (!mounted) return;
-      if (actor != null) {
-        final isPeer = sl<NightingaleActorValidator>().isNightingalePeer(actor);
-        debugPrint('[FindPeople] Actor ${actor.id} isNightingalePeer=$isPeer '
-            'nightingalePublicAddress=${actor.nightingalePublicAddress}');
-        if (!isPeer) {
-          setState(() => _lookupState = _LookupNotNightingale(actor!));
-          return;
-        }
-        setState(() => _lookupState = _LookupFound(actor!));
-      } else {
+    final result = await sl<MastodonBridgeService>().lookupByHandle(trimmed);
+    if (!mounted) return;
+
+    switch (result) {
+      case HandleLookupFound(:final match, :final mastodonHandle):
+        setState(() => _lookupState = _LookupFound(match, mastodonHandle));
+      case HandleLookupNotNightingale():
+        setState(() => _lookupState = _LookupNotNightingale());
+      case HandleLookupNotFound():
         setState(() => _lookupState = _LookupFailed(
-              'Couldn\'t find "$trimmed". Try signing in with Mastodon to find people from your network.',
+              "Couldn't find that handle. Check the spelling and try again.",
             ));
-      }
-    } catch (e, st) {
-      debugPrint('[FindPeople] _resolveByUsername error for "$trimmed": $e\n$st');
-      if (mounted) {
-        setState(() => _lookupState = _LookupFailed('Something went wrong. Please try again.'));
-      }
     }
   }
 
@@ -277,6 +223,24 @@ class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
               ?.copyWith(color: AppColors.neutral400),
         ),
         const SizedBox(height: AppSpacing.md),
+
+        if (_importState is _ImportAuthenticated) ...[
+          _ConnectedBanner(
+            instance: (_importState as _ImportAuthenticated).instance,
+            onDisconnect: _disconnect,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: () {
+                final s = _importState as _ImportAuthenticated;
+                _runImport(s.instance, s.token);
+              },
+              child: const Text('Find Nightingale connections'),
+            ),
+          ),
+        ],
 
         if (_importState is _ImportIdle || _importState is _ImportFailed) ...[
           TextField(
@@ -333,12 +297,12 @@ class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Find by username',
+          'Find by Mastodon handle',
           style: Theme.of(context).textTheme.titleSmall,
         ),
         const SizedBox(height: AppSpacing.xs),
         Text(
-          'Search for someone you may already be connected to, or paste a link they shared with you.',
+          "Know someone's Mastodon handle? Enter it to see if they're on Nightingale.",
           style: Theme.of(context)
               .textTheme
               .bodyMedium
@@ -348,12 +312,12 @@ class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
         TextField(
           controller: _searchController,
           textInputAction: TextInputAction.search,
-          onSubmitted: _resolveByUsername,
+          onSubmitted: _lookupByHandle,
           decoration: InputDecoration(
-            hintText: 'Paste a Nightingale actor URL',
+            hintText: '@alice@mastodon.social',
             suffixIcon: IconButton(
               icon: const Icon(Icons.arrow_forward),
-              onPressed: () => _resolveByUsername(_searchController.text),
+              onPressed: () => _lookupByHandle(_searchController.text),
             ),
           ),
         ),
@@ -365,8 +329,9 @@ class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
         if (_lookupState is _LookupFound)
           Padding(
             padding: const EdgeInsets.only(top: AppSpacing.md),
-            child: _ActorResultCard(
-              actor: (_lookupState as _LookupFound).actor,
+            child: _HandleResultCard(
+              match: (_lookupState as _LookupFound).match,
+              mastodonHandle: (_lookupState as _LookupFound).mastodonHandle,
             ),
           ),
         if (_lookupState is _LookupFailed)
@@ -379,21 +344,11 @@ class _FindPeopleScreenState extends ConsumerState<FindPeopleScreen> {
                   ),
             ),
           ),
-        if (_lookupState is _LookupMastodonHandle)
-          Padding(
-            padding: const EdgeInsets.only(top: AppSpacing.md),
-            child: Text(
-              "That looks like a Mastodon handle. Use the 'From Mastodon' section above to see if they're on Nightingale.",
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: AppColors.neutral400,
-                  ),
-            ),
-          ),
         if (_lookupState is _LookupNotNightingale)
           Padding(
             padding: const EdgeInsets.only(top: AppSpacing.md),
             child: Text(
-              "This is a standard ActivityPub account, not a Nightingale music node. If you know them on Mastodon, use the 'From Mastodon' section to check if they're on Nightingale.",
+              "This person isn't on Nightingale yet.",
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: AppColors.neutral400,
                   ),
@@ -534,13 +489,16 @@ class _MatchResults extends ConsumerWidget {
   }
 }
 
-class _ActorResultCard extends ConsumerWidget {
-  const _ActorResultCard({required this.actor});
-  final ApActor actor;
+class _HandleResultCard extends ConsumerWidget {
+  const _HandleResultCard({
+    required this.match,
+    required this.mastodonHandle,
+  });
+  final MastodonMatch match;
+  final String mastodonHandle;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final node = Uri.tryParse(actor.id)?.host ?? actor.id;
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
@@ -548,21 +506,15 @@ class _ActorResultCard extends ConsumerWidget {
         child: Row(
           children: [
             Expanded(
-              child: GestureDetector(
-                onTap: () => context.push(
-                  '/profile/${Uri.encodeComponent(actor.id)}',
-                ),
-                child: PersonDisplay(
-                  displayName:
-                      actor.name.isNotEmpty ? actor.name : actor.preferredUsername,
-                  handle: '@${actor.preferredUsername}@$node',
-                  avatarUrl: actor.icon,
-                  showHandle: true,
-                ),
+              child: PersonDisplay(
+                displayName: match.displayName,
+                handle: mastodonHandle,
+                avatarUrl: match.avatarUrl,
+                showHandle: true,
               ),
             ),
             const SizedBox(width: AppSpacing.md),
-            _FollowButton(actorUrl: actor.id),
+            _FollowButton(actorUrl: match.actorUrl, mastodonHandle: mastodonHandle),
           ],
         ),
       ),
@@ -571,8 +523,9 @@ class _ActorResultCard extends ConsumerWidget {
 }
 
 class _FollowButton extends ConsumerStatefulWidget {
-  const _FollowButton({required this.actorUrl});
+  const _FollowButton({required this.actorUrl, this.mastodonHandle});
   final String actorUrl;
+  final String? mastodonHandle;
 
   @override
   ConsumerState<_FollowButton> createState() => _FollowButtonState();
@@ -668,7 +621,7 @@ class _FollowButtonState extends ConsumerState<_FollowButton> {
       _errorMessage = null;
     });
     try {
-      final result = await ref.read(socialGraphProvider.notifier).followActor(widget.actorUrl);
+      final result = await ref.read(socialGraphProvider.notifier).followActor(widget.actorUrl, mastodonHandle: widget.mastodonHandle);
       debugPrint('[FollowButton] followActor() → ${result.runtimeType} for ${widget.actorUrl}');
       if (!mounted) return;
       if (result is NotANightingalePeer) {

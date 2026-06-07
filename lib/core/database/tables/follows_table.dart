@@ -9,6 +9,7 @@ class FollowsTable extends Table {
   TextColumn get remoteActorUrl => text()();
   // state: accepted | pending | pending_delivery
   TextColumn get state => text().withDefault(const Constant('accepted'))();
+  TextColumn get mastodonHandle => text().nullable()();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
 }

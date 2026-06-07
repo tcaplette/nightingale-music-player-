@@ -24,6 +24,7 @@ class MastodonProfileSyncService {
   final http.Client _client;
 
   String? _lastPublishedAddress;
+  String? _lastPublishedActorUrl;
   bool _needsReauth = false;
 
   /// True when the stored token lacks `write:accounts` — UI should prompt re-auth.
@@ -40,18 +41,13 @@ class MastodonProfileSyncService {
     required String actorUrl,
     required String publicAddress,
   }) async {
-    print('NIGHTINGALE SYNC: sync() called actorUrl=$actorUrl publicAddress=$publicAddress lastPublished=$_lastPublishedAddress');
-    if (publicAddress == _lastPublishedAddress) {
-      print('NIGHTINGALE SYNC: address unchanged — skipping');
-      return;
-    }
+    if (publicAddress == _lastPublishedAddress && actorUrl == _lastPublishedActorUrl) return;
 
     final creds = await _oauth.getStoredCredentials();
     if (creds == null) {
-      print('NIGHTINGALE SYNC: no Mastodon account connected — skipping');
+      AppLogger.debug('MastodonProfileSync: no account connected — skipping', tag: _tag);
       return;
     }
-    print('NIGHTINGALE SYNC: using account on ${creds.instance}');
 
     try {
       // Fetch current profile to read existing custom fields.
@@ -114,14 +110,20 @@ class MastodonProfileSyncService {
 
       if (patchRes.statusCode == 200) {
         _lastPublishedAddress = publicAddress;
+        _lastPublishedActorUrl = actorUrl;
         _needsReauth = false;
-        print('NIGHTINGALE SYNC: SUCCESS — published actorUrl=$actorUrl publicAddress=$publicAddress');
+        AppLogger.info(
+          'MastodonProfileSync: published address=$publicAddress actorUrl=$actorUrl',
+          tag: _tag,
+        );
       } else {
-        print('NIGHTINGALE SYNC: FAILED — update_credentials returned ${patchRes.statusCode} body=${patchRes.body}');
+        AppLogger.warning(
+          'MastodonProfileSync: update_credentials returned ${patchRes.statusCode}',
+          tag: _tag,
+        );
       }
-    } catch (e, st) {
-      print('NIGHTINGALE SYNC: ERROR — $e');
-      print('NIGHTINGALE SYNC: STACK — $st');
+    } catch (e) {
+      AppLogger.warning('MastodonProfileSync: sync failed: $e', tag: _tag);
     }
   }
 
@@ -183,6 +185,7 @@ class MastodonProfileSyncService {
 
       if (patchRes.statusCode == 200) {
         _lastPublishedAddress = null;
+        _lastPublishedActorUrl = null;
         AppLogger.info('MastodonProfileSync: cleared address fields', tag: _tag);
       } else {
         AppLogger.warning(

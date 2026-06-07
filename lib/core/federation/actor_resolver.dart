@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:http/http.dart' as http;
 import 'package:nightingale/core/activitypub/models/ap_actor.dart';
+import 'package:nightingale/core/activitypub/models/ap_public_key.dart';
 import 'package:nightingale/core/activitypub/models/webfinger_jrd.dart';
 import 'package:nightingale/core/database/app_database.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
@@ -60,6 +61,60 @@ class ActorResolver {
     return _fetchAndCache(actorUrl, discoverySource: discoverySource);
   }
 
+  /// Builds a minimal [ApActor] from out-of-band data (e.g. Mastodon profile
+  /// fields) and stores it in the cache with a short TTL (60 s).
+  ///
+  /// Used when the device is behind NAT and its HTTP server cannot be reached
+  /// directly. The short TTL ensures the cache refreshes automatically once
+  /// the device becomes reachable and a live fetch can populate the public key.
+  Future<ApActor> synthesizeAndCache(
+    String actorUrl, {
+    required String displayName,
+    String? nightingalePublicAddress,
+    String? avatarUrl,
+    String discoverySource = 'mastodonImport',
+  }) async {
+    final uri = Uri.tryParse(actorUrl);
+    final username = uri?.pathSegments.lastWhere(
+          (s) => s.isNotEmpty,
+          orElse: () => 'unknown',
+        ) ??
+        'unknown';
+
+    final actor = ApActor(
+      id: actorUrl,
+      type: 'Person',
+      inbox: '$actorUrl/inbox',
+      outbox: '$actorUrl/outbox',
+      followers: '$actorUrl/followers',
+      following: '$actorUrl/following',
+      preferredUsername: username,
+      name: displayName.isNotEmpty ? displayName : username,
+      publicKey: ApPublicKey(
+        id: '$actorUrl#main-key',
+        owner: actorUrl,
+        publicKeyPem: '',
+      ),
+      icon: avatarUrl,
+      nightingalePublicAddress: nightingalePublicAddress,
+    );
+
+    await db.into(db.actorCacheTable).insertOnConflictUpdate(
+          ActorCacheTableCompanion.insert(
+            actorUrl: actorUrl,
+            actorJson: jsonEncode(actor.toJson()),
+            ttlSeconds: const Value(60),
+            discoverySource: Value(discoverySource),
+          ),
+        );
+
+    AppLogger.debug(
+      'Actor synthesized (NAT fallback): $actorUrl [$discoverySource]',
+      tag: 'actor_cache',
+    );
+    return actor;
+  }
+
   Future<void> invalidate(String actorUrl) async {
     await (db.delete(db.actorCacheTable)
           ..where((t) => t.actorUrl.equals(actorUrl)))
@@ -103,7 +158,7 @@ class ActorResolver {
       final response = await _client.get(
         Uri.parse(actorUrl),
         headers: {'Accept': 'application/activity+json'},
-      );
+      ).timeout(const Duration(seconds: 8));
       if (response.statusCode != 200) {
         return ResolveFailed(
           'Actor fetch returned ${response.statusCode} for $actorUrl',

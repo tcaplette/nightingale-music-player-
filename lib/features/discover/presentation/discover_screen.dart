@@ -76,9 +76,15 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen>
         ),
         data: (state) {
           if (state.results.isEmpty) {
-            return DiscoverEmptyState(
-              onFindPeople: () => context.push(AppRoutes.findPeople),
+            final following = ref.watch(
+              socialGraphProvider.select((s) => s.following),
             );
+            if (following.isEmpty) {
+              return DiscoverEmptyState(
+                onFindPeople: () => context.push(AppRoutes.findPeople),
+              );
+            }
+            return const _PendingLibraryState();
           }
           return RefreshIndicator(
             onRefresh: () =>
@@ -91,6 +97,45 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen>
   }
 }
 
+
+class _PendingLibraryState extends StatelessWidget {
+  const _PendingLibraryState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.library_music_outlined,
+              size: 48,
+              color: AppColors.neutral400,
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Text(
+              'Fetching music from your connections',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Recommendations will appear once your connections\'s libraries are available.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppColors.neutral400,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _ResultList extends StatelessWidget {
   const _ResultList({required this.results});

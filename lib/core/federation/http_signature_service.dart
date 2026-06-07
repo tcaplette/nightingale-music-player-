@@ -187,7 +187,7 @@ class HttpSignatureService {
       final response = await http.get(
         Uri.parse(actorUrl),
         headers: {'Accept': 'application/activity+json'},
-      );
+      ).timeout(const Duration(seconds: 8));
       if (response.statusCode != 200) return null;
       final json = jsonDecode(response.body) as Map<String, dynamic>;
       final pk = json['publicKey'];

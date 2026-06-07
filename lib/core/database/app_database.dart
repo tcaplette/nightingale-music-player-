@@ -75,7 +75,7 @@ class AppDatabase extends _$AppDatabase {
       : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 15;
+  int get schemaVersion => 16;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -209,6 +209,11 @@ class AppDatabase extends _$AppDatabase {
           await customStatement('DROP TABLE IF EXISTS artists');
         });
         await m.alterTable(TableMigration(tracksTable));
+      }
+      if (from < 16) {
+        await customStatement(
+          'ALTER TABLE follows ADD COLUMN mastodon_handle TEXT',
+        );
       }
     },
   );

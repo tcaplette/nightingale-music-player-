@@ -76,19 +76,18 @@ class SocialGraphNotifier extends StateNotifier<SocialGraphState> {
     );
   }
 
-  Future<FollowResult> followActor(String actorUrl) async {
+  Future<FollowResult> followActor(String actorUrl, {String? mastodonHandle}) async {
+    print('DEBUG_NOTIFIER: followActor actorUrl=$actorUrl mastodonHandle=$mastodonHandle');
     AppLogger.info('SocialGraph: followActor($actorUrl) — calling repository', tag: 'social_graph');
-    final result = await _repo.followActor(actorUrl);
+    final result = await _repo.followActor(actorUrl, mastodonHandle: mastodonHandle);
     AppLogger.info(
       'SocialGraph: followActor($actorUrl) → ${result.runtimeType}',
       tag: 'social_graph',
     );
-    if (result is FollowSuccess) {
-      // Seed the local recommendation cache immediately so the radio has tracks
-      // without waiting for the next periodic refresh.
+    if (result is FollowSuccess || result is AlreadyFollowing) {
       sl<RemoteLibraryFetcher>().fetchLibrary(actorUrl).then((tracks) {
         AppLogger.info(
-          'SocialGraph: pre-seeded ${tracks?.length ?? 0} tracks from new follow $actorUrl',
+          'SocialGraph: pre-seeded ${tracks?.length ?? 0} tracks from follow $actorUrl',
           tag: 'social_graph',
         );
       }).ignore();
@@ -98,8 +97,6 @@ class SocialGraphNotifier extends StateNotifier<SocialGraphState> {
         '(id=${result.actor.id} nightingalePublicAddress=${result.actor.nightingalePublicAddress})',
         tag: 'social_graph',
       );
-    } else if (result is AlreadyFollowing) {
-      AppLogger.info('SocialGraph: already following $actorUrl', tag: 'social_graph');
     }
     await load();
     return result;

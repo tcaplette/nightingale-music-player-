@@ -69,7 +69,9 @@ class ConnectionNegotiator {
 
   Future<String?> _negotiate(String actorUrl) async {
     // ── Tier 1: direct HTTP probe ─────────────────────────────────────────────
+    print('DEBUG_NEGOTIATE: starting tier1 for $actorUrl');
     final directUrl = await _tryDirect(actorUrl);
+    print('DEBUG_NEGOTIATE: tier1 result=$directUrl');
     if (directUrl != null) {
       AppLogger.info(
         'ConnectionNegotiator: direct path to $actorUrl → $directUrl',
@@ -79,7 +81,9 @@ class ConnectionNegotiator {
     }
 
     // ── Tier 2: UDP hole punching ─────────────────────────────────────────────
+    print('DEBUG_NEGOTIATE: starting tier2 holepunch for $actorUrl');
     final punchedAddress = await _holePunch.attemptHolePunch(actorUrl);
+    print('DEBUG_NEGOTIATE: tier2 result=$punchedAddress');
     if (punchedAddress != null) {
       AppLogger.info(
         'ConnectionNegotiator: hole-punch path to $actorUrl → $punchedAddress',

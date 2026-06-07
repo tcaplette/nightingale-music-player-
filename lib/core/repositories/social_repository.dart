@@ -27,7 +27,7 @@ enum FollowRequestState {
 abstract interface class SocialRepository implements Repository {
   // ── Outgoing follows ──────────────────────────────────────────────────────
 
-  Future<FollowResult> followActor(String actorUrl);
+  Future<FollowResult> followActor(String actorUrl, {String? mastodonHandle});
   Future<void> unfollowActor(String actorUrl);
 
   Future<String?> getFollowState(String actorUrl);

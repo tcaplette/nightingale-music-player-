@@ -20,6 +20,7 @@ import 'package:nightingale/features/federation/delivery/activity_delivery_servi
 import 'package:nightingale/features/federation/discovery/mastodon_bridge_service.dart';
 import 'package:nightingale/features/federation/discovery/mastodon_oauth_service.dart';
 import 'package:nightingale/features/federation/discovery/mastodon_profile_sync_service.dart';
+import 'package:nightingale/features/federation/discovery/mastodon_signaling_service.dart';
 import 'package:nightingale/features/federation/discovery/peer_discovery_service.dart';
 import 'package:nightingale/features/federation/network/network_binding_service.dart';
 import 'package:nightingale/features/federation/discovery/peer_exchange_service.dart';
@@ -213,6 +214,7 @@ Future<void> setupServiceLocator() async {
   // ── Phase 4: Library Federation ──────────────────────────────────────────
 
   // Library publisher
+
   final libraryPublisher = LibraryPublisher(
     libraryRepo: _sl<LibraryRepository>(),
     identityRepo: _sl<NodeIdentityRepository>(),
@@ -220,6 +222,7 @@ Future<void> setupServiceLocator() async {
     settings: settingsRepo,
   );
   await libraryPublisher.init();
+
   _sl.registerSingleton<LibraryPublisher>(libraryPublisher);
 
   // Peer exchange — background actor cache expansion on follow
@@ -237,6 +240,11 @@ Future<void> setupServiceLocator() async {
     MastodonOAuthService(storage: _sl<SecureStorageService>()),
   );
 
+  // Mastodon signaling — DM-based hole-punch signal delivery for CGNAT peers
+  _sl.registerSingleton<MastodonSignalingService>(
+    MastodonSignalingService(oauthService: _sl<MastodonOAuthService>()),
+  );
+
   // Mastodon profile sync — publishes STUN address to Mastodon profile fields
   _sl.registerSingleton<MastodonProfileSyncService>(
     MastodonProfileSyncService(
@@ -244,8 +252,38 @@ Future<void> setupServiceLocator() async {
     ),
   );
 
-  // Remote library fetcher — lazy so ConnectionNegotiator (registered in Phase
-  // 9) is available when the singleton is first created.
+  // NAT traversal — must be registered before RemoteLibraryFetcher is resolved
+  _sl.registerSingleton<HolePunchService>(
+    HolePunchService(
+      actorResolver: _sl<ActorResolver>(),
+      delivery: _sl<ActivityDeliveryService>(),
+      identityRepo: _sl<NodeIdentityRepository>(),
+      stunResolver: _sl<StunAddressResolver>(),
+      db: db,
+      storage: _sl<SecureStorageService>(),
+      signaling: _sl<MastodonSignalingService>(),
+    ),
+  );
+
+  _sl.registerSingleton<CircuitRelayClient>(
+    CircuitRelayClientImpl(
+      db: db,
+      actorResolver: _sl<ActorResolver>(),
+      delivery: _sl<ActivityDeliveryService>(),
+    ),
+  );
+
+  _sl.registerSingleton<ConnectionNegotiator>(
+    ConnectionNegotiator(
+      actorResolver: _sl<ActorResolver>(),
+      holePunchService: _sl<HolePunchService>(),
+      relayClient: _sl<CircuitRelayClient>(),
+      identityRepo: _sl<NodeIdentityRepository>(),
+      validator: _sl<NightingaleActorValidator>(),
+    ),
+  );
+
+  // Remote library fetcher — lazy; ConnectionNegotiator is now registered above
   _sl.registerLazySingleton<RemoteLibraryFetcher>(
     () => RemoteLibraryFetcher(
       db: db,
@@ -297,35 +335,6 @@ Future<void> setupServiceLocator() async {
   // federation server so both can call canSeed().
   final seedingPolicy = SeedingPowerPolicy(settings: settingsRepo);
   _sl.registerSingleton<SeedingPowerPolicy>(seedingPolicy);
-
-  // ── Phase 9: NAT traversal ───────────────────────────────────────────────
-
-  _sl.registerSingleton<HolePunchService>(
-    HolePunchService(
-      actorResolver: _sl<ActorResolver>(),
-      delivery: _sl<ActivityDeliveryService>(),
-      identityRepo: _sl<NodeIdentityRepository>(),
-      stunResolver: _sl<StunAddressResolver>(),
-    ),
-  );
-
-  _sl.registerSingleton<CircuitRelayClient>(
-    CircuitRelayClientImpl(
-      db: db,
-      actorResolver: _sl<ActorResolver>(),
-      delivery: _sl<ActivityDeliveryService>(),
-    ),
-  );
-
-  _sl.registerSingleton<ConnectionNegotiator>(
-    ConnectionNegotiator(
-      actorResolver: _sl<ActorResolver>(),
-      holePunchService: _sl<HolePunchService>(),
-      relayClient: _sl<CircuitRelayClient>(),
-      identityRepo: _sl<NodeIdentityRepository>(),
-      validator: _sl<NightingaleActorValidator>(),
-    ),
-  );
 
   // Relay server — raw TCP on preferredPort + 1; active only when relay mode is enabled.
   final relayServer = RelayServer(

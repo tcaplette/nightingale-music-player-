@@ -175,17 +175,31 @@ class NetworkBindingService {
         AppLogger.debug(
             '_findPublicCellularAddress: checking ${iface.name} (${addr.address})',
             tag: _tag);
-        // Run STUN bound to this interface's IP to confirm it's publicly routable.
+
+        // Try STUN first; fall back to HTTPS IP discovery when UDP is blocked.
         final stunOnIface =
             StunAddressResolver(stunServer: _stun.stunServer, timeout: _stun.timeout);
-        final result = await stunOnIface.resolve();
-        if (result == null) continue;
+        String? publicResult = await stunOnIface.resolve();
 
-        // For cellular, STUN succeeding confirms a public IP is reachable.
-        // Bind to the interface IP, publish the STUN-discovered public address.
+        if (publicResult == null) {
+          AppLogger.debug(
+              '_findPublicCellularAddress: STUN blocked on ${iface.name} — trying HTTPS fallback',
+              tag: _tag);
+          final httpIp = await _resolvePublicIpViaHttps();
+          if (httpIp != null) {
+            final serverPort = _server.currentPort ?? 7777;
+            publicResult = '$httpIp:$serverPort';
+            AppLogger.debug(
+                '_findPublicCellularAddress: HTTPS fallback succeeded: $publicResult',
+                tag: _tag);
+          }
+        }
+
+        if (publicResult == null) continue;
+
         AppLogger.debug(
-            '_findPublicCellularAddress: ${iface.name} stun=$result', tag: _tag);
-        return '${addr.address}|$result';
+            '_findPublicCellularAddress: ${iface.name} public=$publicResult', tag: _tag);
+        return '${addr.address}|$publicResult';
       }
     }
     return null;
@@ -234,14 +248,12 @@ class NetworkBindingService {
     final publicIp = publicAddress.split(':').first;
     final serverPort = _server.currentPort ?? 7777;
     final publicActorUrl = 'http://$publicIp:$serverPort/users/${actor.preferredUsername}';
-    print('NIGHTINGALE BINDING: publicActorUrl=$publicActorUrl');
     _profileSync.sync(actorUrl: publicActorUrl, publicAddress: publicAddress).ignore();
 
     _setStatus(status);
   }
 
   Future<void> _enterConsumerOnly() async {
-    print('NIGHTINGALE BINDING: entering consumer-only mode — no public interface found');
     await _server.stop();
     _currentBindAddress = null;
     await _identityRepo.updatePublicAddress(null);

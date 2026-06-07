@@ -8,7 +8,7 @@ import 'package:nightingale/features/onboarding/secure_storage_service.dart';
 
 const _tag = 'mastodon_oauth';
 const _redirectUri = 'nightingale://oauth/callback';
-const _scopes = 'read:follows read:accounts write:accounts';
+const _scopes = 'read:follows read:accounts write:accounts write:statuses read:notifications';
 const _clientName = 'Nightingale';
 
 class MastodonAccountDetails {

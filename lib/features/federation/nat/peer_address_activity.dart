@@ -12,6 +12,7 @@ class PeerAddressActivity {
     required this.publicAddress,
     required this.localAddress,
     required this.timestamp,
+    this.senderMastodonHandle,
   });
 
   final String id;
@@ -21,6 +22,41 @@ class PeerAddressActivity {
   final String publicAddress;
   final String localAddress;
   final DateTime timestamp;
+  // Sender's Mastodon handle (@user@instance.tld) carried so the receiver
+  // can echo back via Mastodon DM when both devices are behind CGNAT.
+  final String? senderMastodonHandle;
+
+  static PeerAddressActivity? fromSignalJson(Map<String, dynamic> json) {
+    try {
+      final nonce = json['n'] as String?;
+      final fromActorUrl = json['f'] as String?;
+      final publicAddress = json['p'] as String?;
+      if (nonce == null || fromActorUrl == null || publicAddress == null) {
+        return null;
+      }
+      return PeerAddressActivity(
+        id: '$fromActorUrl/peer-address-dm/$nonce',
+        fromActorUrl: fromActorUrl,
+        toActorUrl: '',
+        sessionNonce: nonce,
+        publicAddress: publicAddress,
+        localAddress: publicAddress,
+        timestamp: DateTime.now().toUtc(),
+        senderMastodonHandle: json['s'] as String?,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static PeerAddressActivity? fromJson(Map<String, dynamic> json) {
+    try {
+      final activity = ApPeerAddress.fromJson(json);
+      return fromApActivity(activity);
+    } catch (_) {
+      return null;
+    }
+  }
 
   static PeerAddressActivity? fromApActivity(ApPeerAddress activity) {
     final obj = activity.object;
@@ -46,6 +82,7 @@ class PeerAddressActivity {
       publicAddress: publicAddress,
       localAddress: localAddress,
       timestamp: DateTime.parse(timestampStr),
+      senderMastodonHandle: obj['senderMastodonHandle'] as String?,
     );
   }
 
@@ -58,6 +95,8 @@ class PeerAddressActivity {
           'publicAddress': publicAddress,
           'localAddress': localAddress,
           'timestamp': timestamp.toUtc().toIso8601String(),
+          if (senderMastodonHandle != null)
+            'senderMastodonHandle': senderMastodonHandle,
         },
         to: [toActorUrl],
       );
@@ -74,6 +113,8 @@ class PeerAddressActivity {
           'publicAddress': publicAddress,
           'localAddress': localAddress,
           'timestamp': timestamp.toUtc().toIso8601String(),
+          if (senderMastodonHandle != null)
+            'senderMastodonHandle': senderMastodonHandle,
         },
       };
 }

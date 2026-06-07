@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:nightingale/core/activitypub/models/ap_actor.dart';
 import 'package:nightingale/core/activitypub/models/ap_collection.dart';
 import 'package:nightingale/core/federation/actor_resolver.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
@@ -20,6 +21,22 @@ class MastodonMatch {
   final String actorUrl;
   final String displayName;
   final String? avatarUrl;
+}
+
+/// Result of a single Mastodon handle lookup.
+sealed class HandleLookupResult {}
+
+/// Handle was not found on Mastodon (WebFinger failed or account doesn't exist).
+class HandleLookupNotFound extends HandleLookupResult {}
+
+/// Account exists on Mastodon but has not published a Nightingale actor URL.
+class HandleLookupNotNightingale extends HandleLookupResult {}
+
+/// Account found and is a Nightingale peer.
+class HandleLookupFound extends HandleLookupResult {
+  HandleLookupFound(this.match, this.mastodonHandle);
+  final MastodonMatch match;
+  final String mastodonHandle;
 }
 
 /// Bridges Mastodon social graphs into Nightingale.
@@ -190,7 +207,8 @@ class MastodonBridgeService {
   }
 
   /// Shared logic: scan actor JSON map for x-nightingale-actor-url and
-  /// resolve matched Nightingale actors.
+  /// resolve matched Nightingale actors, synthesizing from Mastodon data
+  /// when the device is behind NAT and unreachable directly.
   Future<List<MastodonMatch>> _matchNightingaleActors(
     Map<String, Map<String, dynamic>> actorJsonByUrl,
   ) async {
@@ -202,19 +220,39 @@ class MastodonBridgeService {
       if (nightingaleUrl == null) continue;
       if (!seen.add(nightingaleUrl)) continue;
 
-      final nightingaleResult = await _actorResolver.resolve(
+      final mastodonDisplayName =
+          (actorJson['name'] as String?)?.trim() ??
+          (actorJson['preferredUsername'] as String?) ??
+          '';
+      final iconRaw = actorJson['icon'];
+      final mastodonAvatarUrl = iconRaw is Map
+          ? iconRaw['url'] as String?
+          : iconRaw as String?;
+      final nightingalePublicAddress =
+          _extractFieldValue(actorJson, 'x-nightingale-public-address');
+
+      ApActor actor;
+      final result = await _actorResolver.resolve(
         nightingaleUrl,
         discoverySource: 'mastodonImport',
       );
-
-      if (nightingaleResult is ResolveOk) {
-        final actor = nightingaleResult.actor;
-        matches.add(MastodonMatch(
-          actorUrl: actor.id,
-          displayName: actor.name.isNotEmpty ? actor.name : actor.preferredUsername,
-          avatarUrl: actor.icon,
-        ));
+      if (result is ResolveOk) {
+        actor = result.actor;
+      } else {
+        actor = await _actorResolver.synthesizeAndCache(
+          nightingaleUrl,
+          displayName: mastodonDisplayName,
+          nightingalePublicAddress: nightingalePublicAddress,
+          avatarUrl: mastodonAvatarUrl,
+          discoverySource: 'mastodonImport',
+        );
       }
+
+      matches.add(MastodonMatch(
+        actorUrl: actor.id,
+        displayName: actor.name.isNotEmpty ? actor.name : actor.preferredUsername,
+        avatarUrl: actor.icon,
+      ));
     }
 
     AppLogger.debug(
@@ -267,6 +305,135 @@ class MastodonBridgeService {
     _markImport(instance);
 
     return _matchNightingaleActors(actorJsonByUrl);
+  }
+
+  // ── Single-handle lookup ───────────────────────────────────────────────────
+
+  /// Looks up a single Mastodon handle and returns a [HandleLookupResult].
+  ///
+  /// Flow:
+  ///   1. WebFinger the handle to get the Mastodon actor URL
+  ///   2. Fetch the Mastodon actor JSON (ActivityPub format)
+  ///   3. Extract `x-nightingale-actor-url` from the actor's fields
+  ///   4. Resolve the Nightingale actor via [ActorResolver]
+  ///
+  /// Never throws — all errors surface as [HandleLookupNotFound].
+  Future<HandleLookupResult> lookupByHandle(String handle) async {
+    final stripped = handle.startsWith('@') ? handle.substring(1) : handle;
+    final parts = stripped.split('@');
+    if (parts.length != 2 || parts[0].isEmpty || parts[1].isEmpty) {
+      return HandleLookupNotFound();
+    }
+    final domain = parts[1];
+
+    try {
+      // 1. WebFinger → Mastodon actor URL.
+      String? mastodonActorUrl;
+      for (final scheme in ['https', 'http']) {
+        try {
+          final uri = Uri.parse(
+            '$scheme://$domain/.well-known/webfinger?resource=acct:$stripped',
+          );
+          final res = await _client
+              .get(uri, headers: {'Accept': 'application/jrd+json'})
+              .timeout(const Duration(seconds: 8));
+          if (res.statusCode == 200) {
+            final jrd = jsonDecode(res.body) as Map<String, dynamic>;
+            final links = (jrd['links'] as List<dynamic>?)
+                ?.whereType<Map<String, dynamic>>()
+                .where((l) => l['rel'] == 'self')
+                .toList();
+            mastodonActorUrl = links
+                ?.map((l) => l['href'] as String?)
+                .firstWhere((h) => h != null, orElse: () => null);
+            if (mastodonActorUrl != null) break;
+          }
+        } catch (_) {
+          continue;
+        }
+      }
+
+      if (mastodonActorUrl == null) {
+        AppLogger.debug('lookupByHandle: WebFinger failed for $handle', tag: _tag);
+        return HandleLookupNotFound();
+      }
+
+      // 2. Fetch Mastodon actor JSON.
+      final actorRes = await _client
+          .get(
+            Uri.parse(mastodonActorUrl),
+            headers: {'Accept': 'application/activity+json'},
+          )
+          .timeout(const Duration(seconds: 8));
+
+      if (actorRes.statusCode != 200) {
+        AppLogger.debug(
+          'lookupByHandle: actor fetch ${actorRes.statusCode} for $mastodonActorUrl',
+          tag: _tag,
+        );
+        return HandleLookupNotFound();
+      }
+
+      final actorJson = jsonDecode(actorRes.body) as Map<String, dynamic>;
+
+      // 3. Extract x-nightingale-actor-url.
+      final nightingaleUrl = _extractNightingaleUrl(actorJson);
+      if (nightingaleUrl == null) {
+        AppLogger.debug(
+          'lookupByHandle: $handle is on Mastodon but not Nightingale',
+          tag: _tag,
+        );
+        return HandleLookupNotNightingale();
+      }
+
+      // Extract supporting data available from the Mastodon actor for synthesis.
+      final mastodonDisplayName =
+          (actorJson['name'] as String?)?.trim() ?? stripped.split('@').first;
+      final iconRaw = actorJson['icon'];
+      final mastodonAvatarUrl = iconRaw is Map
+          ? iconRaw['url'] as String?
+          : iconRaw as String?;
+      final nightingalePublicAddress =
+          _extractFieldValue(actorJson, 'x-nightingale-public-address');
+
+      // 4. Resolve Nightingale actor — synthesize from Mastodon data on failure
+      //    (device may be behind NAT and unreachable directly).
+      ApActor actor;
+      final result = await _actorResolver.resolve(
+        nightingaleUrl,
+        discoverySource: 'mastodonHandleLookup',
+      );
+      if (result is ResolveOk) {
+        actor = result.actor;
+      } else {
+        AppLogger.debug(
+          'lookupByHandle: direct resolve failed for $nightingaleUrl — synthesizing from Mastodon data',
+          tag: _tag,
+        );
+        actor = await _actorResolver.synthesizeAndCache(
+          nightingaleUrl,
+          displayName: mastodonDisplayName,
+          nightingalePublicAddress: nightingalePublicAddress,
+          avatarUrl: mastodonAvatarUrl,
+          discoverySource: 'mastodonHandleLookup',
+        );
+      }
+
+      final match = MastodonMatch(
+        actorUrl: actor.id,
+        displayName: actor.name.isNotEmpty ? actor.name : actor.preferredUsername,
+        avatarUrl: actor.icon,
+      );
+
+      AppLogger.info(
+        'lookupByHandle: found Nightingale peer $handle → ${actor.id}',
+        tag: _tag,
+      );
+      return HandleLookupFound(match, '@$stripped');
+    } catch (e) {
+      AppLogger.debug('lookupByHandle error for $handle: $e', tag: _tag);
+      return HandleLookupNotFound();
+    }
   }
 
   // ── Private ────────────────────────────────────────────────────────────────
@@ -333,6 +500,36 @@ class MastodonBridgeService {
     // String URLs only — we need the full JSON to check for the extension field,
     // so plain URL entries are skipped (Mastodon returns full objects in
     // followers/following collections).
+  }
+
+  /// Extracts a named field value from a Mastodon actor JSON object.
+  /// Handles both REST API `fields` array and ActivityPub `attachment` array.
+  static String? _extractFieldValue(Map<String, dynamic> actorJson, String fieldName) {
+    final lower = fieldName.toLowerCase();
+
+    final fields = actorJson['fields'];
+    if (fields is List) {
+      for (final f in fields) {
+        if (f is Map<String, dynamic>) {
+          if ((f['name'] as String? ?? '').toLowerCase().trim() == lower) {
+            return f['value'] as String?;
+          }
+        }
+      }
+    }
+
+    final attachment = actorJson['attachment'];
+    if (attachment is List) {
+      for (final item in attachment) {
+        if (item is Map<String, dynamic>) {
+          if ((item['name'] as String? ?? '').toLowerCase().trim() == lower) {
+            return item['value'] as String?;
+          }
+        }
+      }
+    }
+
+    return actorJson[fieldName] as String?;
   }
 
   /// Extracts the `x-nightingale-actor-url` extension field from a raw actor

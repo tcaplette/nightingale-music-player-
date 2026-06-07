@@ -6574,6 +6574,17 @@ class $FollowsTableTable extends FollowsTable
     requiredDuringInsert: false,
     defaultValue: const Constant('accepted'),
   );
+  static const VerificationMeta _mastodonHandleMeta = const VerificationMeta(
+    'mastodonHandle',
+  );
+  @override
+  late final GeneratedColumn<String> mastodonHandle = GeneratedColumn<String>(
+    'mastodon_handle',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -6604,6 +6615,7 @@ class $FollowsTableTable extends FollowsTable
     localActorId,
     remoteActorUrl,
     state,
+    mastodonHandle,
     createdAt,
     updatedAt,
   ];
@@ -6653,6 +6665,15 @@ class $FollowsTableTable extends FollowsTable
         state.isAcceptableOrUnknown(data['state']!, _stateMeta),
       );
     }
+    if (data.containsKey('mastodon_handle')) {
+      context.handle(
+        _mastodonHandleMeta,
+        mastodonHandle.isAcceptableOrUnknown(
+          data['mastodon_handle']!,
+          _mastodonHandleMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -6690,6 +6711,10 @@ class $FollowsTableTable extends FollowsTable
         DriftSqlType.string,
         data['${effectivePrefix}state'],
       )!,
+      mastodonHandle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}mastodon_handle'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -6713,6 +6738,7 @@ class FollowsTableData extends DataClass
   final String localActorId;
   final String remoteActorUrl;
   final String state;
+  final String? mastodonHandle;
   final DateTime createdAt;
   final DateTime updatedAt;
   const FollowsTableData({
@@ -6720,6 +6746,7 @@ class FollowsTableData extends DataClass
     required this.localActorId,
     required this.remoteActorUrl,
     required this.state,
+    this.mastodonHandle,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -6730,6 +6757,9 @@ class FollowsTableData extends DataClass
     map['local_actor_id'] = Variable<String>(localActorId);
     map['remote_actor_url'] = Variable<String>(remoteActorUrl);
     map['state'] = Variable<String>(state);
+    if (!nullToAbsent || mastodonHandle != null) {
+      map['mastodon_handle'] = Variable<String>(mastodonHandle);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
@@ -6741,6 +6771,9 @@ class FollowsTableData extends DataClass
       localActorId: Value(localActorId),
       remoteActorUrl: Value(remoteActorUrl),
       state: Value(state),
+      mastodonHandle: mastodonHandle == null && nullToAbsent
+          ? const Value.absent()
+          : Value(mastodonHandle),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -6756,6 +6789,7 @@ class FollowsTableData extends DataClass
       localActorId: serializer.fromJson<String>(json['localActorId']),
       remoteActorUrl: serializer.fromJson<String>(json['remoteActorUrl']),
       state: serializer.fromJson<String>(json['state']),
+      mastodonHandle: serializer.fromJson<String?>(json['mastodonHandle']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -6768,6 +6802,7 @@ class FollowsTableData extends DataClass
       'localActorId': serializer.toJson<String>(localActorId),
       'remoteActorUrl': serializer.toJson<String>(remoteActorUrl),
       'state': serializer.toJson<String>(state),
+      'mastodonHandle': serializer.toJson<String?>(mastodonHandle),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -6778,6 +6813,7 @@ class FollowsTableData extends DataClass
     String? localActorId,
     String? remoteActorUrl,
     String? state,
+    Value<String?> mastodonHandle = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => FollowsTableData(
@@ -6785,6 +6821,9 @@ class FollowsTableData extends DataClass
     localActorId: localActorId ?? this.localActorId,
     remoteActorUrl: remoteActorUrl ?? this.remoteActorUrl,
     state: state ?? this.state,
+    mastodonHandle: mastodonHandle.present
+        ? mastodonHandle.value
+        : this.mastodonHandle,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -6798,6 +6837,9 @@ class FollowsTableData extends DataClass
           ? data.remoteActorUrl.value
           : this.remoteActorUrl,
       state: data.state.present ? data.state.value : this.state,
+      mastodonHandle: data.mastodonHandle.present
+          ? data.mastodonHandle.value
+          : this.mastodonHandle,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -6810,6 +6852,7 @@ class FollowsTableData extends DataClass
           ..write('localActorId: $localActorId, ')
           ..write('remoteActorUrl: $remoteActorUrl, ')
           ..write('state: $state, ')
+          ..write('mastodonHandle: $mastodonHandle, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -6822,6 +6865,7 @@ class FollowsTableData extends DataClass
     localActorId,
     remoteActorUrl,
     state,
+    mastodonHandle,
     createdAt,
     updatedAt,
   );
@@ -6833,6 +6877,7 @@ class FollowsTableData extends DataClass
           other.localActorId == this.localActorId &&
           other.remoteActorUrl == this.remoteActorUrl &&
           other.state == this.state &&
+          other.mastodonHandle == this.mastodonHandle &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -6842,6 +6887,7 @@ class FollowsTableCompanion extends UpdateCompanion<FollowsTableData> {
   final Value<String> localActorId;
   final Value<String> remoteActorUrl;
   final Value<String> state;
+  final Value<String?> mastodonHandle;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   const FollowsTableCompanion({
@@ -6849,6 +6895,7 @@ class FollowsTableCompanion extends UpdateCompanion<FollowsTableData> {
     this.localActorId = const Value.absent(),
     this.remoteActorUrl = const Value.absent(),
     this.state = const Value.absent(),
+    this.mastodonHandle = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
   });
@@ -6857,6 +6904,7 @@ class FollowsTableCompanion extends UpdateCompanion<FollowsTableData> {
     required String localActorId,
     required String remoteActorUrl,
     this.state = const Value.absent(),
+    this.mastodonHandle = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
   }) : localActorId = Value(localActorId),
@@ -6866,6 +6914,7 @@ class FollowsTableCompanion extends UpdateCompanion<FollowsTableData> {
     Expression<String>? localActorId,
     Expression<String>? remoteActorUrl,
     Expression<String>? state,
+    Expression<String>? mastodonHandle,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
   }) {
@@ -6874,6 +6923,7 @@ class FollowsTableCompanion extends UpdateCompanion<FollowsTableData> {
       if (localActorId != null) 'local_actor_id': localActorId,
       if (remoteActorUrl != null) 'remote_actor_url': remoteActorUrl,
       if (state != null) 'state': state,
+      if (mastodonHandle != null) 'mastodon_handle': mastodonHandle,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
     });
@@ -6884,6 +6934,7 @@ class FollowsTableCompanion extends UpdateCompanion<FollowsTableData> {
     Value<String>? localActorId,
     Value<String>? remoteActorUrl,
     Value<String>? state,
+    Value<String?>? mastodonHandle,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
   }) {
@@ -6892,6 +6943,7 @@ class FollowsTableCompanion extends UpdateCompanion<FollowsTableData> {
       localActorId: localActorId ?? this.localActorId,
       remoteActorUrl: remoteActorUrl ?? this.remoteActorUrl,
       state: state ?? this.state,
+      mastodonHandle: mastodonHandle ?? this.mastodonHandle,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -6912,6 +6964,9 @@ class FollowsTableCompanion extends UpdateCompanion<FollowsTableData> {
     if (state.present) {
       map['state'] = Variable<String>(state.value);
     }
+    if (mastodonHandle.present) {
+      map['mastodon_handle'] = Variable<String>(mastodonHandle.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -6928,6 +6983,7 @@ class FollowsTableCompanion extends UpdateCompanion<FollowsTableData> {
           ..write('localActorId: $localActorId, ')
           ..write('remoteActorUrl: $remoteActorUrl, ')
           ..write('state: $state, ')
+          ..write('mastodonHandle: $mastodonHandle, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -14846,6 +14902,7 @@ typedef $$FollowsTableTableCreateCompanionBuilder =
       required String localActorId,
       required String remoteActorUrl,
       Value<String> state,
+      Value<String?> mastodonHandle,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
     });
@@ -14855,6 +14912,7 @@ typedef $$FollowsTableTableUpdateCompanionBuilder =
       Value<String> localActorId,
       Value<String> remoteActorUrl,
       Value<String> state,
+      Value<String?> mastodonHandle,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
     });
@@ -14885,6 +14943,11 @@ class $$FollowsTableTableFilterComposer
 
   ColumnFilters<String> get state => $composableBuilder(
     column: $table.state,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mastodonHandle => $composableBuilder(
+    column: $table.mastodonHandle,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -14928,6 +14991,11 @@ class $$FollowsTableTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get mastodonHandle => $composableBuilder(
+    column: $table.mastodonHandle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -14963,6 +15031,11 @@ class $$FollowsTableTableAnnotationComposer
 
   GeneratedColumn<String> get state =>
       $composableBuilder(column: $table.state, builder: (column) => column);
+
+  GeneratedColumn<String> get mastodonHandle => $composableBuilder(
+    column: $table.mastodonHandle,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -15006,6 +15079,7 @@ class $$FollowsTableTableTableManager
                 Value<String> localActorId = const Value.absent(),
                 Value<String> remoteActorUrl = const Value.absent(),
                 Value<String> state = const Value.absent(),
+                Value<String?> mastodonHandle = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
               }) => FollowsTableCompanion(
@@ -15013,6 +15087,7 @@ class $$FollowsTableTableTableManager
                 localActorId: localActorId,
                 remoteActorUrl: remoteActorUrl,
                 state: state,
+                mastodonHandle: mastodonHandle,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
               ),
@@ -15022,6 +15097,7 @@ class $$FollowsTableTableTableManager
                 required String localActorId,
                 required String remoteActorUrl,
                 Value<String> state = const Value.absent(),
+                Value<String?> mastodonHandle = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
               }) => FollowsTableCompanion.insert(
@@ -15029,6 +15105,7 @@ class $$FollowsTableTableTableManager
                 localActorId: localActorId,
                 remoteActorUrl: remoteActorUrl,
                 state: state,
+                mastodonHandle: mastodonHandle,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
               ),

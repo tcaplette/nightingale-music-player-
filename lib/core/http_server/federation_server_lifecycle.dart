@@ -5,6 +5,8 @@ import 'package:flutter/widgets.dart';
 import 'package:nightingale/core/di/service_locator.dart';
 import 'package:nightingale/core/http_server/federation_server.dart';
 import 'package:nightingale/core/logging/app_logger.dart';
+import 'package:nightingale/features/federation/discovery/mastodon_signaling_service.dart';
+import 'package:nightingale/features/federation/nat/hole_punch_service.dart';
 import 'package:nightingale/features/federation/network/network_binding_service.dart';
 import 'package:nightingale/features/federation/reachability/node_reachability_service.dart';
 
@@ -29,6 +31,7 @@ class _FederationServerLifecycleState extends State<FederationServerLifecycle>
     WidgetsBinding.instance.addObserver(this);
     _subscribeToNetworkChanges();
     _refreshPublicAddress();
+    _startMastodonPolling();
   }
 
   @override
@@ -63,6 +66,20 @@ class _FederationServerLifecycleState extends State<FederationServerLifecycle>
     sl<NetworkBindingService>().evaluateAndBind().ignore();
   }
 
+  void _startMastodonPolling() {
+    try {
+      sl<MastodonSignalingService>().startBackgroundPolling(
+        sl<HolePunchService>().handleIncomingPeerAddressFromMastodon,
+      );
+    } catch (_) {}
+  }
+
+  void _stopMastodonPolling() {
+    try {
+      sl<MastodonSignalingService>().stopBackgroundPolling();
+    } catch (_) {}
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     switch (state) {
@@ -70,8 +87,10 @@ class _FederationServerLifecycleState extends State<FederationServerLifecycle>
       case AppLifecycleState.detached:
         sl<FederationServer>().stop();
         AppLogger.debug('FederationServer stopped (app paused)', tag: 'server');
+        _stopMastodonPolling();
       case AppLifecycleState.resumed:
         _refreshPublicAddress();
+        _startMastodonPolling();
       default:
         break;
     }

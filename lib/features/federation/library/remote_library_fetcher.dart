@@ -48,7 +48,9 @@ class RemoteLibraryFetcher {
       // ConnectionNegotiator is not wired up.
       String baseUrl;
       if (_connectionNegotiator != null) {
+        print('LIBRARY_FETCH: resolving endpoint for $actorUrl nightingalePublicAddress=${actor.nightingalePublicAddress}');
         final resolved = await _connectionNegotiator.resolveEndpoint(actorUrl);
+        print('LIBRARY_FETCH: resolveEndpoint result=$resolved');
         if (resolved == null) {
           AppLogger.warning('No path to $actorUrl', tag: _tag);
           return null;

@@ -38,16 +38,46 @@ class SocialRepositoryImpl implements SocialRepository {
   // ── Outgoing follows ──────────────────────────────────────────────────────
 
   @override
-  Future<FollowResult> followActor(String actorUrl) async {
-    // Guard against re-following the same peer across identity changes.
-    // Uniqueness is on remote_actor_url alone — local identity may differ
-    // after a reinstall but the relationship is the same.
-    final existing = await (_db.select(_db.followsTable)
+  Future<FollowResult> followActor(String actorUrl, {String? mastodonHandle}) async {
+    print('DEBUG_FOLLOW: followActor called actorUrl=$actorUrl mastodonHandle=$mastodonHandle');
+    // Exact URL match first (fast path).
+    final exactMatch = await (_db.select(_db.followsTable)
           ..where((t) => t.remoteActorUrl.equals(actorUrl)))
         .getSingleOrNull();
-    if (existing != null) {
+    if (exactMatch != null) {
       AppLogger.info('followActor: already following $actorUrl — skipping', tag: _tag);
       return AlreadyFollowing();
+    }
+
+    // Username match — same peer, different IP (actor URL changed on network change).
+    // Extract the username from the path and check for an existing follow.
+    final username = Uri.tryParse(actorUrl)
+        ?.pathSegments
+        .lastWhere((s) => s.isNotEmpty, orElse: () => '');
+    if (username != null && username.isNotEmpty) {
+      final usernameMatch = await (_db.select(_db.followsTable)
+            ..where((t) => t.remoteActorUrl.like('%/users/$username')))
+          .getSingleOrNull();
+      if (usernameMatch != null) {
+        // Update the stored URL to the current one and return.
+        await (_db.update(_db.followsTable)
+              ..where((t) => t.rowId.equals(usernameMatch.rowId)))
+            .write(FollowsTableCompanion(
+          remoteActorUrl: Value(actorUrl),
+          // Only write handle if provided — don't overwrite an existing value with null.
+          mastodonHandle: mastodonHandle != null
+              ? Value(mastodonHandle)
+              : const Value.absent(),
+        ));
+        await (_db.update(_db.followingTable)
+              ..where((t) => t.actorUrl.like('%/users/$username')))
+            .write(FollowingTableCompanion(actorUrl: Value(actorUrl)));
+        AppLogger.info(
+          'followActor: updated actor URL for $username ($actorUrl)',
+          tag: _tag,
+        );
+        return AlreadyFollowing();
+      }
     }
 
     final myActorUrl = await _identityRepo.getActorUrl();
@@ -111,6 +141,7 @@ class SocialRepositoryImpl implements SocialRepository {
               localActorId: myActorUrl,
               remoteActorUrl: actorUrl,
               state: const Value('accepted'),
+              mastodonHandle: Value(mastodonHandle),
             ),
             mode: InsertMode.insertOrIgnore,
           );
